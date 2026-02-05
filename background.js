@@ -267,32 +267,34 @@ async function generateImageHash(dataUrl, captureData) {
     const sample = dataUrl.substring(dataUrl.length - 1000); // end of b64 is often unique
     return `hash-${geometry}-${sample.length}-${sample.substring(0, 10)}`;
 }
-if (!text) return;
-try {
-    console.log('Attempting to copy to clipboard...');
-    await chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        func: function (textToCopy) {
-            try {
-                // Fallback: Create a hidden textarea and use execCommand('copy')
-                var textarea = document.createElement('textarea');
-                textarea.value = textToCopy;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                console.log('Copied to clipboard via fallback method');
-            } catch (e) {
-                // Modern Clipboard API
-                navigator.clipboard.writeText(textToCopy);
-                console.log('Copied to clipboard via navigator.clipboard');
-            }
-        },
-        args: [text]
-    });
-} catch (error) {
-    console.warn('Clipboard copy script failed (might be a restricted page):', error);
-}
+
+async function copyToClipboard(text, tabId) {
+    if (!text) return;
+    try {
+        console.log('Attempting to copy to clipboard...');
+        await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: function (textToCopy) {
+                try {
+                    // Fallback: Create a hidden textarea and use execCommand('copy')
+                    var textarea = document.createElement('textarea');
+                    textarea.value = textToCopy;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    console.log('Copied to clipboard via fallback method');
+                } catch (e) {
+                    // Modern Clipboard API
+                    navigator.clipboard.writeText(textToCopy);
+                    console.log('Copied to clipboard via navigator.clipboard');
+                }
+            },
+            args: [text]
+        });
+    } catch (error) {
+        console.warn('Clipboard copy script failed (might be a restricted page):', error);
+    }
 }
 
 function showNotification(title, message, isError) {

@@ -10,10 +10,12 @@ async function initTesseract() {
         console.log('Offscreen: Initializing Tesseract worker from root...');
 
         // Configure Tesseract to use local files from the root
+        // Critical for MV3: workerBlobURL: false
         ocrWorker = await Tesseract.createWorker('eng', 1, {
             workerPath: chrome.runtime.getURL('/tesseract-worker.min.js'),
             langPath: chrome.runtime.getURL('/'),
             corePath: chrome.runtime.getURL('/tesseract-core.wasm.js'),
+            workerBlobURL: false,
             logger: m => console.log('Offscreen OCR Status:', m)
         });
         console.log('Offscreen: Tesseract worker initialized (Ready)');
@@ -78,7 +80,7 @@ async function handleProcessing(data) {
 
 async function processImage(dataUrl, captureData) {
     return new Promise(function (resolve, reject) {
-        console.log('Offscreen: Loading image for processing...');
+        console.log('Offscreen: Loading image for processing with OpenCV...');
         var img = new Image();
         img.onload = function () {
             try {
@@ -88,54 +90,56 @@ async function processImage(dataUrl, captureData) {
                 const x = captureData ? captureData.x : 0;
                 const y = captureData ? captureData.y : 0;
 
-                // Create canvas with 2x DPI scaling for better OCR
-                var canvas = document.createElement('canvas');
-                canvas.width = width * 2;
-                canvas.height = height * 2;
-                var ctx = canvas.getContext('2d', { willReadFrequently: true });
+                // Create initial canvas to extract pixels
+                var srcCanvas = document.createElement('canvas');
+                srcCanvas.width = width;
+                srcCanvas.height = height;
+                var srcCtx = srcCanvas.getContext('2d');
+                srcCtx.drawImage(img, x, y, width, height, 0, 0, width, height);
 
-                // Draw upscaled
-                ctx.drawImage(img, x, y, width, height, 0, 0, width * 2, height * 2);
+                // Use OpenCV for high-quality preprocessing
+                var mat = cv.imread(srcCanvas);
 
-                // Apply Preprocessing Filters
-                preprocessCanvas(canvas);
+                // 1. Grayscale
+                var gray = new cv.Mat();
+                cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY, 0);
 
-                canvas.toBlob(function (blob) {
+                // 2. Gaussian Blur (Reduce noise)
+                var blurred = new cv.Mat();
+                cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0, 0, cv.BORDER_DEFAULT);
+
+                // 3. Adaptive Thresholding (Handle shadows/gradients)
+                var thresh = new cv.Mat();
+                cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+
+                // Render back to canvas (Upscaled x2 for better OCR)
+                var finalCanvas = document.createElement('canvas');
+                finalCanvas.width = width * 2;
+                finalCanvas.height = height * 2;
+
+                // Resize back to final canvas using OpenCV for better interpolation
+                var upscaled = new cv.Mat();
+                cv.resize(thresh, upscaled, new cv.Size(width * 2, height * 2), 0, 0, cv.INTER_CUBIC);
+
+                cv.imshow(finalCanvas, upscaled);
+
+                finalCanvas.toBlob(function (blob) {
                     if (!blob) {
-                        reject(new Error('Failed to create blob from processed canvas'));
+                        reject(new Error('Failed to create blob from OpenCV canvas'));
                         return;
                     }
-                    console.log('Offscreen: Preprocessing complete, blob size:', blob.size);
+                    console.log('Offscreen: OpenCV Preprocessing complete, blob size:', blob.size);
                     resolve(blob);
+
+                    // Cleanup Mats
+                    mat.delete(); gray.delete(); blurred.delete(); thresh.delete(); upscaled.delete();
                 }, 'image/png');
             } catch (e) {
-                console.error('Offscreen: Processing error:', e);
+                console.error('Offscreen: OpenCV Processing error:', e);
                 reject(e);
             }
         };
-        img.onerror = () => reject(new Error('Failed to load image for preprocessing'));
+        img.onerror = () => reject(new Error('Failed to load image for OpenCV processing'));
         img.src = dataUrl;
     });
-}
-
-function preprocessCanvas(canvas) {
-    const ctx = canvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-
-    for (let i = 0; i < data.length; i += 4) {
-        // 1. Grayscale
-        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-
-        // 2. Thresholding (Binarization)
-        // Simple threshold at 140 (tweakable)
-        const val = avg > 140 ? 255 : 0;
-
-        data[i] = val;     // R
-        data[i + 1] = val; // G
-        data[i + 2] = val; // B
-        // Alpha (data[i+3]) stays the same
-    }
-
-    ctx.putImageData(imageData, 0, 0);
 }

@@ -62,7 +62,9 @@
         "offscreen.js",
         "tesseract.min.js",
         "sidepanel.html",
-        "sidepanel.js"
+        "sidepanel.js",
+        "opencv.js",
+        "tesseract-core.wasm"
       ],
       "matches": [
         "<all_urls>"
