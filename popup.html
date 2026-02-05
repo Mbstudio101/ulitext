@@ -271,11 +271,16 @@
     </div>
 
     <div class="result-container">
-      <label class="result-label">Extracted Text:</label>
+      <label class="result-label" for="resultText">Extracted Text:</label>
       <textarea id="resultText" class="result-text" placeholder="Captured text will appear here..."></textarea>
     </div>
 
-    <button id="copyBtn" class="copy-btn">Copy to Clipboard</button>
+    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+      <button id="copyBtn" class="copy-btn" style="flex: 2; margin-bottom: 0;">Copy to Clipboard</button>
+      <button id="searchBtn" class="copy-btn"
+        style="flex: 1; margin-bottom: 0; background-color: #f0f7ff; color: #1976d2; border-color: #1976d2;">🔍
+        Search</button>
+    </div>
 
     <div class="footer">
       Version <span id="version">1.0.0</span>

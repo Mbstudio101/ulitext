@@ -17,6 +17,7 @@
     var openSidePanelBtn = document.getElementById('openSidePanelBtn');
     var fileOcrBtn = document.getElementById('fileOcrBtn');
     var fileInput = document.getElementById('fileInput');
+    var searchBtn = document.getElementById('searchBtn');
 
     // Load version from manifest
     var manifest = chrome.runtime.getManifest();
@@ -178,6 +179,15 @@
             }).catch(function (err) {
                 showStatus('Failed to copy: ' + err.message, 'error');
             });
+        }
+    });
+
+    // Search button click
+    searchBtn.addEventListener('click', function () {
+        var text = resultText.value;
+        if (text) {
+            var searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(text);
+            chrome.tabs.create({ url: searchUrl });
         }
     });
 

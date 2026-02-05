@@ -12,11 +12,19 @@ function loadHistory() {
         history.slice().reverse().forEach((item, index) => {
             const div = document.createElement('div');
             div.className = 'history-item';
+
+            // Escape text for different contexts
+            const safeText = item.text.replace(/'/g, "\\'").replace(/\n/g, ' ');
+            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(item.text)}`;
+
             div.innerHTML = `
                 <div class="history-text">${item.text}</div>
                 <div class="history-meta">
                     <span>${new Date(item.timestamp).toLocaleString()}</span>
-                    <button onclick="copyText('${item.text.replace(/'/g, "\\'")}')">Copy</button>
+                    <div style="display: flex; gap: 4px;">
+                        <button onclick="copyText('${safeText}')">Copy</button>
+                        <button onclick="window.open('${searchUrl}', '_blank')">Find Answer</button>
+                    </div>
                 </div>
             `;
             list.appendChild(div);

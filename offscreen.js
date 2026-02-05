@@ -7,17 +7,22 @@ async function initTesseract() {
     if (ocrWorker) return ocrWorker;
 
     try {
-        console.log('Offscreen: Initializing Tesseract worker from root...');
+        console.log('Offscreen: Initializing Tesseract worker...');
 
-        // Configure Tesseract to use local files from the root
-        // Critical for MV3: workerBlobURL: false
+        if (typeof Tesseract === 'undefined') {
+            throw new Error('Tesseract script not loaded in offscreen document');
+        }
+
+        // Configure Tesseract to use local files
+        // Using relative paths in offscreen document is often more stable
         ocrWorker = await Tesseract.createWorker('eng', 1, {
-            workerPath: chrome.runtime.getURL('/tesseract-worker.min.js'),
-            langPath: chrome.runtime.getURL('/'),
-            corePath: chrome.runtime.getURL('/tesseract-core.wasm.js'),
+            workerPath: 'tesseract-worker.min.js',
+            langPath: '.',
+            corePath: 'tesseract-core.wasm.js',
             workerBlobURL: false,
-            logger: m => console.log('Offscreen OCR Status:', m)
+            logger: m => console.log('OCR Status:', m.status, (m.progress * 100).toFixed(0) + '%')
         });
+
         console.log('Offscreen: Tesseract worker initialized (Ready)');
         return ocrWorker;
     } catch (error) {
