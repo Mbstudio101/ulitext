@@ -41,7 +41,9 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "tesseract-data/*",
+        "tesseract-worker.min.js",
+        "tesseract-core.wasm.js",
+        "eng.traineddata",
         "offscreen.html",
         "offscreen.js",
         "tesseract.min.js"
