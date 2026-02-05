@@ -1,6 +1,23 @@
 // Offscreen Document path
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 
+// Configuration
+var UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+var UPDATE_URL = 'https://api.github.com/repos/Mbstudio101/ulitext/releases/latest';
+var ENABLE_UPDATE_CHECKS = true;
+
+// Handle messages from all parts of the extension
+chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+    if (request.action === 'captureScreenshot') {
+        // Acknowledge receipt immediately to content script
+        sendResponse({ success: true, message: 'Processing capture request...' });
+
+        // Handle capture asynchronously
+        handleScreenshotCapture(request.data, sender.tab.id);
+    }
+    return true; // Keep message channel open for async response
+});
+
 async function handleScreenshotCapture(captureData, tabId) {
     console.log('Starting screenshot capture handle...', captureData);
     try {
