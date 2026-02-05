@@ -1,34 +1,5 @@
-// Background Service Worker - OCR Processing & Auto-Update System
-
-// Import Tesseract.js from local file (Manifest V3 doesn't allow external CDN)
-importScripts('tesseract.min.js');
-
-// Configuration
-var UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-var UPDATE_URL = 'https://api.github.com/repos/Mbstudio101/ulitext/releases/latest';
-var ENABLE_UPDATE_CHECKS = true;
-
-// Global OCR worker
-var ocrWorker = null;
-
-// Initialize Tesseract worker with local paths
-async function initTesseract() {
-    if (ocrWorker) return ocrWorker;
-
-    try {
-        // Configure Tesseract to use local files
-        ocrWorker = await Tesseract.createWorker('eng', 1, {
-            workerPath: chrome.runtime.getURL('tesseract-data/tesseract-worker.min.js'),
-            langPath: chrome.runtime.getURL('tesseract-data'),
-            corePath: chrome.runtime.getURL('tesseract-data/tesseract-core.wasm.js')
-        });
-        console.log('Tesseract worker initialized with local files');
-        return ocrWorker;
-    } catch (error) {
-        console.error('Failed to initialize Tesseract:', error);
-        throw error;
-    }
-}
+// Offscreen Document path
+const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 
 // Handle screenshot capture requests
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
@@ -51,17 +22,34 @@ async function handleScreenshotCapture(captureData, tabId) {
         var dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
         console.log('Full screenshot captured (length: ' + dataUrl.length + ')');
 
+        // Create Offscreen Document
+        notifyPopup({ action: 'ocrProgress', message: 'Preparing OCR engine...' });
+        await setupOffscreenDocument(OFFSCREEN_DOCUMENT_PATH);
+
         // Crop image to selection
         notifyPopup({ action: 'ocrProgress', message: 'Processing image...' });
         var croppedBlob = await cropImage(dataUrl, captureData);
         console.log('Image cropped successfully, blob size:', croppedBlob.size);
 
-        // Perform OCR
+        // Create a blob URL for the offscreen document to use
+        var blobUrl = URL.createObjectURL(croppedBlob);
+
+        // Perform OCR via Offscreen Document
         notifyPopup({ action: 'ocrProgress', message: 'Extracting text...' });
-        var text = await performOCR(croppedBlob);
+        var response = await chrome.runtime.sendMessage({
+            action: 'performOCR',
+            data: blobUrl,
+            offscreen: true
+        });
+
+        if (!response || !response.success) {
+            throw new Error(response ? response.error : 'No response from OCR engine');
+        }
+
+        var text = response.text;
         console.log('OCR Complete! Result length:', text.length);
 
-        // Save result to storage first (so popup can find it even if it closed)
+        // Save result to storage
         await chrome.storage.local.set({ lastOcrResult: text });
 
         // Copy to clipboard
@@ -78,6 +66,18 @@ async function handleScreenshotCapture(captureData, tabId) {
         showNotification('OCR Failed', 'Error: ' + error.message, true);
         notifyPopup({ action: 'ocrError', error: error.message });
     }
+}
+
+async function setupOffscreenDocument(path) {
+    // Check if offscreen document already exists
+    if (await chrome.offscreen.hasDocument()) return;
+
+    // Create offscreen document
+    await chrome.offscreen.createDocument({
+        url: path,
+        reasons: ['WORKERS'], // Tesseract uses workers
+        justification: 'Tesseract.js requires Web Workers which are not available in Service Workers'
+    });
 }
 
 async function cropImage(dataUrl, captureData) {
@@ -101,29 +101,12 @@ async function cropImage(dataUrl, captureData) {
             captureData.width, captureData.height
         );
 
-        // Convert to blob and return it directly (Tesseract accepts Blobs)
+        // Convert to blob
         var croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
         return croppedBlob;
     } catch (error) {
         console.error('cropImage error:', error);
         throw new Error('Failed to crop image: ' + error.message);
-    }
-}
-
-async function performOCR(imageBlob) {
-    try {
-        console.log('Initializing Tesseract worker...');
-        var worker = await initTesseract();
-
-        console.log('Starting Tesseract recognition...');
-        var result = await worker.recognize(imageBlob);
-
-        var text = (result && result.data && result.data.text) ? result.data.text.trim() : '';
-        console.log('OCR processed successfully');
-        return text;
-    } catch (error) {
-        console.error('performOCR error:', error);
-        throw new Error('OCR recognition failed - ' + error.message);
     }
 }
 
@@ -135,21 +118,18 @@ async function copyToClipboard(text, tabId) {
             target: { tabId: tabId },
             func: function (textToCopy) {
                 try {
-                    // Modern Clipboard API
-                    navigator.clipboard.writeText(textToCopy).then(function () {
-                        console.log('Copied to clipboard via navigator.clipboard');
-                    }).catch(function (e) {
-                        // Fallback: Create a hidden textarea and use execCommand('copy')
-                        var textarea = document.createElement('textarea');
-                        textarea.value = textToCopy;
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textarea);
-                        console.log('Copied to clipboard via fallback method');
-                    });
+                    // Fallback: Create a hidden textarea and use execCommand('copy')
+                    var textarea = document.createElement('textarea');
+                    textarea.value = textToCopy;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    console.log('Copied to clipboard via fallback method');
                 } catch (e) {
-                    console.error('Clipboard copy failed:', e);
+                    // Modern Clipboard API
+                    navigator.clipboard.writeText(textToCopy);
+                    console.log('Copied to clipboard via navigator.clipboard');
                 }
             },
             args: [text]
