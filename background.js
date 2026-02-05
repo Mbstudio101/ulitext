@@ -77,37 +77,38 @@ async function handleScreenshotCapture(captureData, tabId) {
     }
 }
 
-function cropImage(dataUrl, captureData) {
-    return new Promise(function (resolve, reject) {
-        var img = new Image();
+async function cropImage(dataUrl, captureData) {
+    try {
+        // In Service Workers, we must use fetch and createImageBitmap instead of new Image()
+        var response = await fetch(dataUrl);
+        var blob = await response.blob();
+        var imageBitmap = await createImageBitmap(blob);
 
-        img.onload = function () {
-            var canvas = new OffscreenCanvas(captureData.width, captureData.height);
-            var ctx = canvas.getContext('2d');
+        var canvas = new OffscreenCanvas(captureData.width, captureData.height);
+        var ctx = canvas.getContext('2d');
 
-            ctx.drawImage(
-                img,
-                captureData.x, captureData.y,
-                captureData.width, captureData.height,
-                0, 0,
-                captureData.width, captureData.height
-            );
+        ctx.drawImage(
+            imageBitmap,
+            captureData.x, captureData.y,
+            captureData.width, captureData.height,
+            0, 0,
+            captureData.width, captureData.height
+        );
 
-            canvas.convertToBlob({ type: 'image/png' }).then(function (blob) {
-                var reader = new FileReader();
-                reader.onloadend = function () {
-                    resolve(reader.result);
-                };
-                reader.readAsDataURL(blob);
-            }).catch(reject);
-        };
+        var croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
 
-        img.onerror = function () {
-            reject(new Error('Failed to load image'));
-        };
-
-        img.src = dataUrl;
-    });
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onloadend = function () {
+                resolve(reader.result);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(croppedBlob);
+        });
+    } catch (error) {
+        console.error('Cropping failed:', error);
+        throw new Error('Failed to crop image: ' + error.message);
+    }
 }
 
 async function performOCR(imageDataUrl) {
