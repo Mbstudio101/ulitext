@@ -43,22 +43,25 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 });
 
 async function handleScreenshotCapture(captureData, tabId) {
+    console.log('Starting screenshot capture handle...', captureData);
     try {
-        // Notify user processing started
         notifyPopup({ action: 'ocrProgress', message: 'Capturing screenshot...' });
 
         // Capture visible tab
         var dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
+        console.log('Full screenshot captured (length: ' + dataUrl.length + ')');
 
         // Crop image to selection
         notifyPopup({ action: 'ocrProgress', message: 'Processing image...' });
-        var croppedDataUrl = await cropImage(dataUrl, captureData);
+        var croppedBlob = await cropImage(dataUrl, captureData);
+        console.log('Image cropped successfully, blob size:', croppedBlob.size);
 
         // Perform OCR
         notifyPopup({ action: 'ocrProgress', message: 'Extracting text...' });
-        var text = await performOCR(croppedDataUrl);
+        var text = await performOCR(croppedBlob);
+        console.log('OCR Complete! Result length:', text.length);
 
-        // Save result
+        // Save result to storage first (so popup can find it even if it closed)
         await chrome.storage.local.set({ lastOcrResult: text });
 
         // Copy to clipboard
@@ -67,11 +70,11 @@ async function handleScreenshotCapture(captureData, tabId) {
         // Show success notification
         showNotification('OCR Complete! ✓', text);
 
-        // Notify popup
+        // Notify popup (if it's still open)
         notifyPopup({ action: 'ocrComplete', text: text });
 
     } catch (error) {
-        console.error('Screenshot capture failed:', error);
+        console.error('Screenshot processing failed:', error);
         showNotification('OCR Failed', 'Error: ' + error.message, true);
         notifyPopup({ action: 'ocrError', error: error.message });
     }
@@ -79,14 +82,17 @@ async function handleScreenshotCapture(captureData, tabId) {
 
 async function cropImage(dataUrl, captureData) {
     try {
-        // In Service Workers, we must use fetch and createImageBitmap instead of new Image()
+        console.log('Cropping image with data:', captureData);
+        // Use fetch to get blob from data URL
         var response = await fetch(dataUrl);
         var blob = await response.blob();
         var imageBitmap = await createImageBitmap(blob);
+        console.log('Original image dimensions:', imageBitmap.width, 'x', imageBitmap.height);
 
         var canvas = new OffscreenCanvas(captureData.width, captureData.height);
         var ctx = canvas.getContext('2d');
 
+        // Draw the cropped portion
         ctx.drawImage(
             imageBitmap,
             captureData.x, captureData.y,
@@ -95,50 +101,66 @@ async function cropImage(dataUrl, captureData) {
             captureData.width, captureData.height
         );
 
+        // Convert to blob and return it directly (Tesseract accepts Blobs)
         var croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
-
-        return new Promise(function (resolve, reject) {
-            var reader = new FileReader();
-            reader.onloadend = function () {
-                resolve(reader.result);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(croppedBlob);
-        });
+        return croppedBlob;
     } catch (error) {
-        console.error('Cropping failed:', error);
+        console.error('cropImage error:', error);
         throw new Error('Failed to crop image: ' + error.message);
     }
 }
 
-async function performOCR(imageDataUrl) {
+async function performOCR(imageBlob) {
     try {
+        console.log('Initializing Tesseract worker...');
         var worker = await initTesseract();
-        var result = await worker.recognize(imageDataUrl);
-        return result.data.text.trim();
+
+        console.log('Starting Tesseract recognition...');
+        var result = await worker.recognize(imageBlob);
+
+        var text = (result && result.data && result.data.text) ? result.data.text.trim() : '';
+        console.log('OCR processed successfully');
+        return text;
     } catch (error) {
-        console.error('OCR failed:', error);
-        throw new Error('OCR processing failed');
+        console.error('performOCR error:', error);
+        throw new Error('OCR recognition failed - ' + error.message);
     }
 }
 
 async function copyToClipboard(text, tabId) {
+    if (!text) return;
     try {
-        // Inject a script to copy to clipboard (more reliable than offscreen document)
+        console.log('Attempting to copy to clipboard...');
         await chrome.scripting.executeScript({
             target: { tabId: tabId },
             func: function (textToCopy) {
-                navigator.clipboard.writeText(textToCopy);
+                try {
+                    // Modern Clipboard API
+                    navigator.clipboard.writeText(textToCopy).then(function () {
+                        console.log('Copied to clipboard via navigator.clipboard');
+                    }).catch(function (e) {
+                        // Fallback: Create a hidden textarea and use execCommand('copy')
+                        var textarea = document.createElement('textarea');
+                        textarea.value = textToCopy;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        console.log('Copied to clipboard via fallback method');
+                    });
+                } catch (e) {
+                    console.error('Clipboard copy failed:', e);
+                }
             },
             args: [text]
         });
     } catch (error) {
-        console.error('Failed to copy to clipboard:', error);
+        console.warn('Clipboard copy script failed (might be a restricted page):', error);
     }
 }
 
 function showNotification(title, message, isError) {
-    var preview = message.length > 100 ? message.substring(0, 100) + '...' : message;
+    var preview = message ? (message.length > 100 ? message.substring(0, 100) + '...' : message) : 'No text extracted';
 
     chrome.notifications.create({
         type: 'basic',
@@ -150,8 +172,9 @@ function showNotification(title, message, isError) {
 }
 
 function notifyPopup(message) {
+    console.log('Notifying popup:', message.action, message.message || '');
     chrome.runtime.sendMessage(message).catch(function () {
-        // Popup might be closed, ignore error
+        // Popup might be closed, this is normal
     });
 }
 
