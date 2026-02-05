@@ -33,8 +33,13 @@ async function initTesseract() {
 // Handle screenshot capture requests
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request.action === 'captureScreenshot') {
+        // Acknowledge receipt immediately
+        sendResponse({ success: true, message: 'Processing capture request...' });
+
+        // Handle capture asynchronously
         handleScreenshotCapture(request.data, sender.tab.id);
     }
+    return true; // Keep message channel open for async response
 });
 
 async function handleScreenshotCapture(captureData, tabId) {

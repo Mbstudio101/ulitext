@@ -113,10 +113,20 @@
         // Clean up overlay before capture
         cleanup();
 
-        // Send capture request to background
+        // Send capture request to background and handle response
         chrome.runtime.sendMessage({
             action: 'captureScreenshot',
             data: captureData
+        }, function (response) {
+            if (chrome.runtime.lastError) {
+                console.error('Failed to send capture request:', chrome.runtime.lastError);
+                alert('Failed to capture screenshot. Please try again.');
+            } else if (response && response.success) {
+                console.log('Capture request sent successfully');
+            } else if (response && response.error) {
+                console.error('Capture failed:', response.error);
+                alert('Capture failed: ' + response.error);
+            }
         });
     }
 
