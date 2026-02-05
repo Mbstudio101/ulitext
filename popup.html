@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -154,6 +155,9 @@
       font-family: 'SF Mono', Monaco, 'Courier New', monospace;
       resize: vertical;
       background: white;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     .copy-btn {
@@ -214,7 +218,9 @@
     }
 
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     .footer {
@@ -226,6 +232,7 @@
     }
   </style>
 </head>
+
 <body>
   <div id="updateBanner" class="update-banner">
     <div class="update-content">
@@ -271,4 +278,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>

@@ -82,14 +82,14 @@
                                         if (chrome.runtime.lastError) {
                                             showStatus('Error: Content script injection failed', 'error');
                                         } else {
-                                            window.close();
+                                            showStatus('Starting capture...', 'info');
                                         }
                                     });
                                 }, 100);
                             });
                         });
                     } else {
-                        window.close();
+                        showStatus('Starting capture...', 'info');
                     }
                 });
             }
