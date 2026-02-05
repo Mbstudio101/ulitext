@@ -112,6 +112,16 @@ async function handleScreenshotCapture(captureData, tabId) {
         // Track status in storage
         await chrome.storage.local.set({ ocrStatus: 'processing', lastOcrError: null });
 
+        // SMART CACHE: Check if we have this exact image in cache
+        const cacheKey = await generateImageHash(dataUrl, captureData);
+        const cache = await chrome.storage.local.get(['ocrCache']);
+        const ocrCache = cache.ocrCache || {};
+
+        if (ocrCache[cacheKey]) {
+            console.log('Background: Cache HIT! Using stored result');
+            return handleSuccessfulResult(ocrCache[cacheKey], tabId, true);
+        }
+
         console.log('Background: Sending data to offscreen document...');
         var response = await sendMessageToOffscreen({
             action: 'performOCR',
@@ -135,35 +145,17 @@ async function handleScreenshotCapture(captureData, tabId) {
         console.log('Background: OCR text received, Confidence:', confidence);
 
         // Smart Logic: Retry if confidence is very low (< 70)
-        if (confidence < 70 && !captureData.isRetry) {
+        if (confidence < 70 && !captureData.isRetry && captureData !== null) {
             console.warn('Background: Low confidence, retrying with different settings...');
-            captureData.isRetry = true; // prevent infinite loop
-            return handleScreenshotCapture(captureData, tabId);
+            const retryData = JSON.parse(JSON.stringify(captureData));
+            retryData.isRetry = true;
+            return handleScreenshotCapture(retryData, tabId);
         }
 
-        if (text.length === 0) {
-            console.warn('Background: OCR returned empty text');
-            text = '(No text found in selection)';
-        }
+        // Save to cache
+        await saveToCache(cacheKey, text);
 
-        // Save result to storage and clear status
-        await saveResultToHistory(text, confidence);
-
-        await chrome.storage.local.set({
-            lastOcrResult: text,
-            ocrStatus: 'idle'
-        });
-        console.log('Background: Saved result to storage and set status to idle');
-
-        // Copy to clipboard
-        await copyToClipboard(text, tabId);
-
-        // Show success notification
-        showNotification('OCR Complete! ✓', text);
-
-        // Notify popup (if it's still open)
-        notifyPopup({ action: 'ocrComplete', text: text });
-
+        return handleSuccessfulResult(text, tabId);
     } catch (error) {
         console.error('OCR Pipeline failed:', error);
         await chrome.storage.local.set({ ocrStatus: 'error', lastOcrError: error.message });
@@ -246,33 +238,61 @@ async function sendMessageToOffscreen(message, retries = 3) {
     }
 }
 
-async function copyToClipboard(text, tabId) {
-    if (!text) return;
-    try {
-        console.log('Attempting to copy to clipboard...');
-        await chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            func: function (textToCopy) {
-                try {
-                    // Fallback: Create a hidden textarea and use execCommand('copy')
-                    var textarea = document.createElement('textarea');
-                    textarea.value = textToCopy;
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    console.log('Copied to clipboard via fallback method');
-                } catch (e) {
-                    // Modern Clipboard API
-                    navigator.clipboard.writeText(textToCopy);
-                    console.log('Copied to clipboard via navigator.clipboard');
-                }
-            },
-            args: [text]
-        });
-    } catch (error) {
-        console.warn('Clipboard copy script failed (might be a restricted page):', error);
-    }
+async function handleSuccessfulResult(text, tabId, isFromCache) {
+    if (text === '') text = '(No text found in selection)';
+
+    await saveResultToHistory(text, isFromCache ? 100 : undefined);
+    await chrome.storage.local.set({ lastOcrResult: text, ocrStatus: 'idle' });
+
+    await copyToClipboard(text, tabId);
+    showNotification(isFromCache ? 'OCR (Cached) ✓' : 'OCR Complete! ✓', text);
+    notifyPopup({ action: 'ocrComplete', text: text });
+}
+
+async function saveToCache(key, text) {
+    const data = await chrome.storage.local.get(['ocrCache']);
+    const cache = data.ocrCache || {};
+    cache[key] = text;
+
+    // Limits cache to last 100 items
+    const keys = Object.keys(cache);
+    if (keys.length > 100) delete cache[keys[0]];
+
+    await chrome.storage.local.set({ ocrCache: cache });
+}
+
+async function generateImageHash(dataUrl, captureData) {
+    // Simple hash for speed: slice of dataUrl + geometry
+    const geometry = captureData ? `${captureData.x},${captureData.y},${captureData.width},${captureData.height}` : 'file';
+    const sample = dataUrl.substring(dataUrl.length - 1000); // end of b64 is often unique
+    return `hash-${geometry}-${sample.length}-${sample.substring(0, 10)}`;
+}
+if (!text) return;
+try {
+    console.log('Attempting to copy to clipboard...');
+    await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: function (textToCopy) {
+            try {
+                // Fallback: Create a hidden textarea and use execCommand('copy')
+                var textarea = document.createElement('textarea');
+                textarea.value = textToCopy;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                console.log('Copied to clipboard via fallback method');
+            } catch (e) {
+                // Modern Clipboard API
+                navigator.clipboard.writeText(textToCopy);
+                console.log('Copied to clipboard via navigator.clipboard');
+            }
+        },
+        args: [text]
+    });
+} catch (error) {
+    console.warn('Clipboard copy script failed (might be a restricted page):', error);
+}
 }
 
 function showNotification(title, message, isError) {
