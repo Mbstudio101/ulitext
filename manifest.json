@@ -9,8 +9,22 @@
     "storage",
     "notifications",
     "alarms",
-    "offscreen"
+    "offscreen",
+    "contextMenus",
+    "sidePanel"
   ],
+  "commands": {
+    "start-area-ocr": {
+      "suggested_key": {
+        "default": "Alt+Shift+U",
+        "mac": "Alt+Shift+U"
+      },
+      "description": "Start Area OCR selection"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "host_permissions": [
     "<all_urls>"
   ],
@@ -46,7 +60,9 @@
         "eng.traineddata",
         "offscreen.html",
         "offscreen.js",
-        "tesseract.min.js"
+        "tesseract.min.js",
+        "sidepanel.html",
+        "sidepanel.js"
       ],
       "matches": [
         "<all_urls>"

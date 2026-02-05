@@ -259,6 +259,12 @@
       <span>Capture Screenshot</span>
     </button>
 
+    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+      <button id="fileOcrBtn" class="copy-btn" style="flex: 1; margin-bottom: 0;">📁 OCR File</button>
+      <button id="openSidePanelBtn" class="copy-btn" style="flex: 1; margin-bottom: 0;">📜 History</button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" style="display:none">
+
     <div id="status" class="status">
       <span class="spinner"></span>
       <span id="statusText"></span>

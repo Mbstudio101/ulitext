@@ -1,0 +1,191 @@
+# TASK: Build a FULLY WORKING OCR Chrome Extension (MV3) — No Dead Functions
+
+You are a senior browser-extension engineer.
+Your goal is to build a **production-ready OCR Chrome extension (Manifest V3)** that works end-to-end with NO placeholders, NO unhooked UI, and NO dead buttons.
+
+Follow this checklist strictly.  
+Every checkbox must be implemented, tested, and verified.
+
+---
+
+## 0. GLOBAL RULES (MANDATORY)
+- ❏ Do NOT create placeholder functions
+- ❏ Do NOT leave TODO / FIXME / comments for “later”
+- ❏ Every UI button must trigger real logic
+- ❏ Every background message must have a receiver
+- ❏ Every permission must be used
+- ❏ If a feature is not implemented, REMOVE its UI
+- ❏ Validate errors, loading states, retries
+- ❏ Local OCR must work offline
+
+---
+
+## 1. MANIFEST (MV3)
+- ❏ Manifest version = 3
+- ❏ Permissions configured and USED:
+  - activeTab
+  - scripting
+  - storage
+  - contextMenus
+  - commands
+  - offscreen
+  - tabs
+- ❏ Service worker registered correctly
+- ❏ Popup, side panel, and options wired
+- ❏ Icons present and referenced
+- ❏ No unused permissions
+
+---
+
+## 2. BACKGROUND SERVICE WORKER (CORE ORCHESTRATOR)
+- ❏ Initialize service worker without runtime errors
+- ❏ Register context menu:
+  - “OCR this image”
+- ❏ Register keyboard shortcut:
+  - Start area OCR
+- ❏ Handle messages:
+  - START_AREA_SELECT
+  - AREA_SELECT_RESULT
+  - OCR_JOB_START
+  - OCR_JOB_COMPLETE
+  - OCR_JOB_ERROR
+- ❏ Create OCR job queue
+- ❏ Prevent concurrent OCR overload
+- ❏ Retry failed jobs once
+- ❏ Store OCR history (TEXT ONLY by default)
+- ❏ Settings persisted via chrome.storage
+- ❏ All errors reported back to UI
+
+---
+
+## 3. CONTENT SCRIPT (USER INTERACTION)
+- ❏ Inject selection overlay only when requested
+- ❏ Area selection works via mouse drag
+- ❏ Selection rectangle visually accurate
+- ❏ Cancel selection with ESC
+- ❏ Correctly calculate:
+  - CSS coordinates
+  - DevicePixelRatio
+  - Scroll offset
+- ❏ Send selection payload to background
+- ❏ Remove overlay after selection
+- ❏ No DOM pollution after completion
+
+---
+
+## 4. OFFSCREEN DOCUMENT (CANVAS + PREPROCESS)
+- ❏ Offscreen document created dynamically
+- ❏ Receives full screenshot bitmap
+- ❏ Crops bitmap using selection data
+- ❏ Preprocess image:
+  - Grayscale
+  - Thresholding
+  - Light denoise
+  - Sharpen
+  - Auto-crop margins
+  - DPI upscale (OCR-safe)
+- ❏ Return processed bitmap
+- ❏ Destroy offscreen context after job
+- ❏ No memory leaks
+
+---
+
+## 5. OCR ENGINE (LOCAL, OFFLINE)
+- ❏ OCR runs in a Worker (no UI blocking)
+- ❏ WASM OCR engine fully loads
+- ❏ English language pack included
+- ❏ OCR returns:
+  - text
+  - bounding boxes
+  - confidence score
+- ❏ Confidence calculated per block + overall
+- ❏ Errors handled gracefully
+- ❏ Worker terminates after use
+
+---
+
+## 6. SMART OCR LOGIC
+- ❏ Skip OCR if DOM text already exists
+- ❏ Re-run OCR once if confidence is low
+- ❏ Rotate / deskew retry implemented
+- ❏ OCR result cached via image hash
+- ❏ Cache reused on repeated captures
+
+---
+
+## 7. POPUP UI
+- ❏ Popup loads instantly
+- ❏ Buttons:
+  - Start Area OCR
+  - OCR Image File (drag/drop)
+  - Copy Text
+  - Open Side Panel
+- ❏ Loading indicator during OCR
+- ❏ Error messages shown to user
+- ❏ Copy action confirmed visually
+- ❏ No inactive buttons
+
+---
+
+## 8. SIDE PANEL UI
+- ❏ Displays full OCR result
+- ❏ Preserves line breaks
+- ❏ Shows confidence score
+- ❏ Allows:
+  - Copy
+  - Download (.txt)
+- ❏ Displays OCR history
+- ❏ History searchable
+- ❏ Clicking history item reloads result
+
+---
+
+## 9. OPTIONS / SETTINGS
+- ❏ Toggle:
+  - Local OCR only (default)
+  - Save history (text only)
+- ❏ Language selection (eng default)
+- ❏ Settings persist correctly
+- ❏ UI reflects saved values
+- ❏ No setting without effect
+
+---
+
+## 10. SECURITY & PRIVACY
+- ❏ No screenshots stored by default
+- ❏ No cloud calls unless enabled
+- ❏ Only cropped regions processed
+- ❏ No background surveillance behavior
+- ❏ Permissions justified and minimal
+
+---
+
+## 11. PERFORMANCE
+- ❏ OCR job queue enforced
+- ❏ UI never freezes
+- ❏ Worker-based processing only
+- ❏ Large images handled safely
+- ❏ Cache prevents redundant OCR
+
+---
+
+## 12. VALIDATION CHECK (MUST PASS)
+- ❏ Area OCR works on any webpage
+- ❏ Right-click image OCR works
+- ❏ OCR works offline
+- ❏ Popup → result → copy flow works
+- ❏ Side panel displays history correctly
+- ❏ No console errors
+- ❏ No dead UI
+- ❏ Extension reloads cleanly
+
+---
+
+## FINAL REQUIREMENT
+Before marking complete:
+- Run full flow manually
+- Confirm every checkbox above is satisfied
+- Remove any unused code
+- Ensure production-ready stability
+
+FAIL THE TASK IF ANY ITEM IS NOT IMPLEMENTED.

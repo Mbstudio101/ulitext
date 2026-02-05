@@ -8,19 +8,86 @@ var ENABLE_UPDATE_CHECKS = true;
 
 // Handle messages from all parts of the extension
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-    // ONLY respond to captureScreenshot. Ignore messages meant for the offscreen doc.
+    // ONLY respond to actions we expect. 
     if (request.action === 'captureScreenshot') {
-        console.log('Background: Received capture request');
-        // Acknowledge receipt immediately to content script
-        sendResponse({ success: true, message: 'Processing capture request...' });
-
-        // Handle capture asynchronously
-        handleScreenshotCapture(request.data, sender.tab.id);
+        processOcrJob(request.data, sender.tab.id);
+        sendResponse({ success: true });
         return true;
     }
-    // Return false for other messages so we don't block the channel
+
+    if (request.action === 'directTextResult') {
+        console.log('Background: Received direct DOM text');
+        saveResultToHistory(request.text, 100); // 100% confidence for DOM text
+        chrome.storage.local.set({ lastOcrResult: request.text, ocrStatus: 'idle' });
+        copyToClipboard(request.text, sender.tab.id);
+        showNotification('Text Captured! ✓', request.text);
+        notifyPopup({ action: 'ocrComplete', text: request.text });
+        return true;
+    }
+
+    if (request.action === 'openSidePanel') {
+        chrome.sidePanel.open({ windowId: sender.tab.windowId });
+        sendResponse({ success: true });
+    }
+
     return false;
 });
+
+// Handle Keyboard Shortcuts
+chrome.commands.onCommand.addListener((command) => {
+    if (command === "start-area-ocr") {
+        console.log('Background: Command received:', command);
+        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+            if (tabs[0]) {
+                chrome.tabs.sendMessage(tabs[0].id, { action: 'startCapture' });
+            }
+        });
+    }
+});
+
+// Handle Context Menu
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "ocr-image") {
+        console.log('Background: Context menu OCR clicked');
+        // For image OCR, we just pass the srcUrl directly to offscreen
+        handleImageOcr(info.srcUrl, tab.id);
+    }
+});
+
+// Initialize Extension Features
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.contextMenus.create({
+        id: "ocr-image",
+        title: "OCR this image",
+        contexts: ["image"]
+    });
+
+    // Check initial updates
+    checkForUpdates();
+});
+
+// OCR Job Queue to prevent overload
+var jobQueue = [];
+var isProcessingJob = false;
+
+async function processOcrJob(data, tabId) {
+    jobQueue.push({ data, tabId });
+    if (!isProcessingJob) {
+        runNextJob();
+    }
+}
+
+async function runNextJob() {
+    if (jobQueue.length === 0) {
+        isProcessingJob = false;
+        return;
+    }
+
+    isProcessingJob = true;
+    const job = jobQueue.shift();
+    await handleScreenshotCapture(job.data, job.tabId);
+    runNextJob();
+}
 
 async function handleScreenshotCapture(captureData, tabId) {
     console.log('Starting screenshot capture handle...', captureData);
@@ -61,14 +128,27 @@ async function handleScreenshotCapture(captureData, tabId) {
             throw new Error(errorMsg);
         }
 
-        var text = response.text;
-        console.log('Background: OCR text received, length:', text.length);
+        var result = response.text; // Response is now an object
+        var text = result.text;
+        var confidence = result.confidence;
+
+        console.log('Background: OCR text received, Confidence:', confidence);
+
+        // Smart Logic: Retry if confidence is very low (< 70)
+        if (confidence < 70 && !captureData.isRetry) {
+            console.warn('Background: Low confidence, retrying with different settings...');
+            captureData.isRetry = true; // prevent infinite loop
+            return handleScreenshotCapture(captureData, tabId);
+        }
+
         if (text.length === 0) {
             console.warn('Background: OCR returned empty text');
             text = '(No text found in selection)';
         }
 
         // Save result to storage and clear status
+        await saveResultToHistory(text, confidence);
+
         await chrome.storage.local.set({
             lastOcrResult: text,
             ocrStatus: 'idle'
@@ -88,6 +168,54 @@ async function handleScreenshotCapture(captureData, tabId) {
         console.error('OCR Pipeline failed:', error);
         await chrome.storage.local.set({ ocrStatus: 'error', lastOcrError: error.message });
         showNotification('OCR Failed', 'Error: ' + error.message, true);
+        notifyPopup({ action: 'ocrError', error: error.message });
+    }
+}
+
+async function saveResultToHistory(text, confidence) {
+    if (!text || text === '(No text found in selection)') return;
+
+    const data = await chrome.storage.local.get(['ocrHistory']);
+    const history = data.ocrHistory || [];
+
+    history.push({
+        text: text,
+        confidence: confidence,
+        timestamp: Date.now()
+    });
+
+    // Keep only last 50 items
+    if (history.length > 50) history.shift();
+
+    await chrome.storage.local.set({ ocrHistory: history });
+}
+
+async function handleImageOcr(imageUrl, tabId) {
+    try {
+        await chrome.storage.local.set({ ocrStatus: 'processing', lastOcrError: null });
+        notifyPopup({ action: 'ocrProgress', message: 'Extracting image text...' });
+
+        await setupOffscreenDocument(OFFSCREEN_DOCUMENT_PATH);
+
+        var response = await sendMessageToOffscreen({
+            action: 'performOCR',
+            target: 'offscreen',
+            data: {
+                dataUrl: imageUrl,
+                captureData: null // Direct Image OCR doesn't need crop coords
+            }
+        });
+
+        if (!response || !response.success) throw new Error(response ? response.error : 'OCR Failed');
+
+        await saveResultToHistory(response.text);
+        await chrome.storage.local.set({ lastOcrResult: response.text, ocrStatus: 'idle' });
+        showNotification('OCR Complete! ✓', response.text);
+        notifyPopup({ action: 'ocrComplete', text: response.text });
+
+    } catch (error) {
+        console.error('Image OCR failed:', error);
+        await chrome.storage.local.set({ ocrStatus: 'error', lastOcrError: error.message });
         notifyPopup({ action: 'ocrError', error: error.message });
     }
 }

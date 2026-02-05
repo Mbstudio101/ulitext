@@ -49,64 +49,93 @@ async function handleProcessing(data) {
 
     try {
         // Step 1: Crop the image using native Canvas/Image
-        console.log('Offscreen: Cropping image...');
-        var croppedBlob = await cropImage(dataUrl, captureData);
+        console.log('Offscreen: Processing image...');
+        var processedBlob = await processImage(dataUrl, captureData);
 
         // Step 2: Initialize Tesseract
         var worker = await initTesseract();
 
         // Step 3: Perform OCR
         console.log('Offscreen: Starting Tesseract recognition...');
-        var result = await worker.recognize(croppedBlob);
+        var result = await worker.recognize(processedBlob);
 
-        var text = (result && result.data && result.data.text) ? result.data.text.trim() : '';
-        console.log('Offscreen: OCR processed successfully, length:', text.length);
+        console.log('Offscreen: OCR Recognition Result:', result.data.text.length, 'chars');
 
-        return text;
+        return {
+            text: result.data.text.trim(),
+            confidence: result.data.confidence,
+            blocks: result.data.blocks.map(b => ({
+                text: b.text,
+                confidence: b.confidence,
+                bbox: b.bbox
+            }))
+        };
     } catch (error) {
         console.error('Offscreen processing error:', error);
         throw error;
     }
 }
 
-async function cropImage(dataUrl, captureData) {
+async function processImage(dataUrl, captureData) {
     return new Promise(function (resolve, reject) {
-        console.log('Offscreen: Loading image for cropping...');
+        console.log('Offscreen: Loading image for processing...');
         var img = new Image();
         img.onload = function () {
             try {
-                console.log('Offscreen: Image loaded, dimensions:', img.width, 'x', img.height);
-                var canvas = document.createElement('canvas');
-                canvas.width = captureData.width;
-                canvas.height = captureData.height;
-                var ctx = canvas.getContext('2d');
+                // Determine dimensions
+                const width = captureData ? captureData.width : img.width;
+                const height = captureData ? captureData.height : img.height;
+                const x = captureData ? captureData.x : 0;
+                const y = captureData ? captureData.y : 0;
 
-                // Draw at 1:1 scale
-                ctx.drawImage(
-                    img,
-                    captureData.x, captureData.y,
-                    captureData.width, captureData.height,
-                    0, 0,
-                    captureData.width, captureData.height
-                );
+                // Create canvas with 2x DPI scaling for better OCR
+                var canvas = document.createElement('canvas');
+                canvas.width = width * 2;
+                canvas.height = height * 2;
+                var ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+                // Draw upscaled
+                ctx.drawImage(img, x, y, width, height, 0, 0, width * 2, height * 2);
+
+                // Apply Preprocessing Filters
+                preprocessCanvas(canvas);
 
                 canvas.toBlob(function (blob) {
                     if (!blob) {
-                        reject(new Error('Failed to create blob from canvas'));
+                        reject(new Error('Failed to create blob from processed canvas'));
                         return;
                     }
-                    console.log('Offscreen: Crop complete, blob size:', blob.size);
+                    console.log('Offscreen: Preprocessing complete, blob size:', blob.size);
                     resolve(blob);
                 }, 'image/png');
             } catch (e) {
-                console.error('Offscreen: Crop drawing error:', e);
+                console.error('Offscreen: Processing error:', e);
                 reject(e);
             }
         };
-        img.onerror = function (err) {
-            console.error('Offscreen: Image load error:', err);
-            reject(new Error('Failed to load screenshot data (length: ' + dataUrl.length + ')'));
-        };
+        img.onerror = () => reject(new Error('Failed to load image for preprocessing'));
         img.src = dataUrl;
     });
+}
+
+function preprocessCanvas(canvas) {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+        // 1. Grayscale
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+
+        // 2. Thresholding (Binarization)
+        // Simple threshold at 140 (tweakable)
+        const val = avg > 140 ? 255 : 0;
+
+        data[i] = val;     // R
+        data[i + 1] = val; // G
+        data[i + 2] = val; // B
+        // Alpha (data[i+3]) stays the same
+    }
+
+    ctx.putImageData(imageData, 0, 0);
 }

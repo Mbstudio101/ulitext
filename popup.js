@@ -14,6 +14,9 @@
     var updateMessage = document.getElementById('updateMessage');
     var viewReleaseBtn = document.getElementById('viewReleaseBtn');
     var dismissUpdateBtn = document.getElementById('dismissUpdateBtn');
+    var openSidePanelBtn = document.getElementById('openSidePanelBtn');
+    var fileOcrBtn = document.getElementById('fileOcrBtn');
+    var fileInput = document.getElementById('fileInput');
 
     // Load version from manifest
     var manifest = chrome.runtime.getManifest();
@@ -130,6 +133,35 @@
                 });
             }
         });
+    });
+
+    // Open Side Panel
+    openSidePanelBtn.addEventListener('click', function () {
+        chrome.runtime.sendMessage({ action: 'openSidePanel' });
+    });
+
+    // File OCR
+    fileOcrBtn.addEventListener('click', function () {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function (e) {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        var reader = new FileReader();
+        reader.onload = function (event) {
+            var dataUrl = event.target.result;
+            showStatus('Processing file...', 'info');
+            chrome.runtime.sendMessage({
+                action: 'captureScreenshot', // We reuse the same handler
+                data: {
+                    dataUrl: dataUrl,
+                    captureData: null // No crop data means process whole image
+                }
+            });
+        };
+        reader.readAsDataURL(file);
     });
 
     // Copy button click

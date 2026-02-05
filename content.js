@@ -110,6 +110,18 @@
             height: height * dpr
         };
 
+        // NEW: Smart Logic - Check if DOM text exists in selection
+        var domText = getTextInArea(left, top, width, height);
+        if (domText && domText.trim().length > 0) {
+            console.log('Smart Logic: DOM text found, skipping OCR');
+            chrome.runtime.sendMessage({
+                action: 'directTextResult',
+                text: domText.trim()
+            });
+            cleanup();
+            return;
+        }
+
         // Clean up overlay before capture
         cleanup();
 
@@ -134,6 +146,29 @@
         if (e.key === 'Escape' || e.keyCode === 27) {
             cleanup();
         }
+    }
+
+    function getTextInArea(l, t, w, h) {
+        var range = document.createRange();
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+
+        // Very basic approach: check all visible text nodes
+        // Production approach: use document.caretRangeFromPoint
+        var text = "";
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        var node;
+        while (node = walker.nextNode()) {
+            var rects = node.parentElement.getClientRects();
+            for (var i = 0; i < rects.length; i++) {
+                var r = rects[i];
+                if (r.left >= l && r.top >= t && r.right <= (l + w) && r.bottom <= (t + h)) {
+                    text += node.textContent + " ";
+                    break;
+                }
+            }
+        }
+        return text.trim();
     }
 
     function cleanup() {
