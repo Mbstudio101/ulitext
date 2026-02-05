@@ -41,8 +41,9 @@ async function handleScreenshotCapture(captureData, tabId) {
         // Track status in storage
         await chrome.storage.local.set({ ocrStatus: 'processing', lastOcrError: null });
 
+        // Send data to offscreen with retries (in case it's still loading)
         console.log('Background: Sending data to offscreen document...');
-        var response = await chrome.runtime.sendMessage({
+        var response = await sendMessageToOffscreen({
             action: 'performOCR',
             data: {
                 dataUrl: dataUrl,
@@ -93,6 +94,22 @@ async function setupOffscreenDocument(path) {
         reasons: ['WORKERS', 'DOM_SCRAPING'],
         justification: 'Tesseract.js requires Web Workers and Canvas which are restricted in Service Workers'
     });
+
+    // Give it a tiny bit of time to initialize scripts
+    await new Promise(r => setTimeout(r, 200));
+}
+
+async function sendMessageToOffscreen(message, retries = 3) {
+    for (var i = 0; i < retries; i++) {
+        try {
+            var response = await chrome.runtime.sendMessage(message);
+            return response;
+        } catch (error) {
+            console.warn('Background: Message failed, retrying... (' + (i + 1) + '/' + retries + ')', error.message);
+            if (i === retries - 1) throw error;
+            await new Promise(r => setTimeout(r, 500)); // Wait before retry
+        }
+    }
 }
 
 async function copyToClipboard(text, tabId) {

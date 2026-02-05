@@ -25,7 +25,7 @@ async function initTesseract() {
 // Handle messages from background service worker
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request.action === 'performOCR') {
-        console.log('Offscreen: Received OCR request');
+        console.log('Offscreen: Received OCR request from', sender.id);
         handleProcessing(request.data).then(function (text) {
             sendResponse({ success: true, text: text });
         }).catch(function (error) {
