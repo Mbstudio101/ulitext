@@ -5,7 +5,7 @@ importScripts('tesseract.min.js');
 
 // Configuration
 var UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-var UPDATE_URL = 'https://api.github.com/repos/YOUR_USERNAME/ulitext/releases/latest';
+var UPDATE_URL = 'https://api.github.com/repos/Mbstudio101/ulitext/releases/latest';
 var ENABLE_UPDATE_CHECKS = true;
 
 // Global OCR worker
