@@ -64,14 +64,17 @@ async function handleProcessing(data) {
 
 async function cropImage(dataUrl, captureData) {
     return new Promise(function (resolve, reject) {
+        console.log('Offscreen: Loading image for cropping...');
         var img = new Image();
         img.onload = function () {
             try {
+                console.log('Offscreen: Image loaded, dimensions:', img.width, 'x', img.height);
                 var canvas = document.createElement('canvas');
                 canvas.width = captureData.width;
                 canvas.height = captureData.height;
                 var ctx = canvas.getContext('2d');
 
+                // Draw at 1:1 scale
                 ctx.drawImage(
                     img,
                     captureData.x, captureData.y,
@@ -81,7 +84,11 @@ async function cropImage(dataUrl, captureData) {
                 );
 
                 canvas.toBlob(function (blob) {
-                    console.log('Offscreen: Crop complete, blob size:', blob ? blob.size : 'null');
+                    if (!blob) {
+                        reject(new Error('Failed to create blob from canvas'));
+                        return;
+                    }
+                    console.log('Offscreen: Crop complete, blob size:', blob.size);
                     resolve(blob);
                 }, 'image/png');
             } catch (e) {
@@ -91,7 +98,7 @@ async function cropImage(dataUrl, captureData) {
         };
         img.onerror = function (err) {
             console.error('Offscreen: Image load error:', err);
-            reject(new Error('Failed to load image for cropping'));
+            reject(new Error('Failed to load screenshot data (length: ' + dataUrl.length + ')'));
         };
         img.src = dataUrl;
     });

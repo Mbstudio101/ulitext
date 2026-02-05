@@ -21,6 +21,7 @@
 
     // Load last result from storage
     chrome.storage.local.get(['lastOcrResult'], function (result) {
+        console.log('Popup: Loaded from storage, text length:', result.lastOcrResult ? result.lastOcrResult.length : 0);
         if (result.lastOcrResult) {
             resultText.value = result.lastOcrResult;
         }
