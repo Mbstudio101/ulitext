@@ -33,22 +33,69 @@ async function initTesseract() {
 
 // Handle messages from background service worker
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-    // Only respond if targeted to offscreen
+    // Perform OCR
     if (request.action === 'performOCR' && request.target === 'offscreen') {
         console.log('Offscreen: Received OCR request');
         handleProcessing(request.data).then(function (text) {
             sendResponse({ success: true, text: text });
         }).catch(function (error) {
-            console.error('Offscreen Error Cache:', error);
-            // Serialize error to ensure it survives IPC
-            sendResponse({
-                success: false,
-                error: error.message || error.toString() || 'Unknown Offscreen Error'
-            });
+            console.error('Offscreen Error:', error);
+            sendResponse({ success: false, error: error.message || 'Processing Error' });
+        });
+        return true;
+    }
+
+    // Fetch Answer (Scraping)
+    if (request.action === 'fetchAnswer' && request.target === 'offscreen') {
+        console.log('Offscreen: Received Answer Search request');
+        scrapeSearchAnswer(request.query).then(function (answer) {
+            sendResponse({ success: true, answer: answer });
+        }).catch(function (error) {
+            console.error('Offscreen Scrape Error:', error);
+            sendResponse({ success: false, error: error.message || 'Scrape Error' });
         });
         return true;
     }
 });
+
+async function scrapeSearchAnswer(query) {
+    try {
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+        console.log('Offscreen: Fetching search result from:', searchUrl);
+
+        const response = await fetch(searchUrl);
+        if (!response.ok) throw new Error('Failed to fetch search results');
+
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Look for common Google Snippet selectors
+        // Note: These selectors change often, we'll try top 3 common ones
+        let answer = '';
+
+        // 1. Featured Snippet (Main answer card)
+        const snippet = doc.querySelector('.Z0LcW, .LGOv9, .hgK601, .ayS70c');
+        if (snippet) answer = snippet.innerText.trim();
+
+        // 2. Knowledge Graph Description
+        if (!answer) {
+            const kg = doc.querySelector('.mfM6f, .VWiC3b');
+            if (kg) answer = kg.innerText.trim();
+        }
+
+        // 3. Fallback: First search result snippet
+        if (!answer) {
+            const firstResult = doc.querySelector('.VWiC3b');
+            if (firstResult) answer = firstResult.innerText.trim();
+        }
+
+        return answer || 'No direct answer found. Click "View Search" to see full results.';
+    } catch (error) {
+        console.error('Scrape Answer Error:', error);
+        throw error;
+    }
+}
 
 async function handleProcessing(data) {
     var dataUrl = data.dataUrl;

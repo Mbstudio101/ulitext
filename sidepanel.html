@@ -59,12 +59,41 @@
 
         button {
             cursor: pointer;
-            padding: 4px 8px;
+            padding: 6px 12px;
             background: #667eea;
             color: white;
             border: none;
             border-radius: 4px;
             font-size: 12px;
+            transition: opacity 0.2s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .answer-box {
+            background: #f0f7ff;
+            border-left: 4px solid #1976d2;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 13px;
+            color: #333;
+            border-radius: 0 4px 4px 0;
+            display: none;
+        }
+
+        .answer-box.visible {
+            display: block;
+        }
+
+        .loading-spinner {
+            font-size: 11px;
+            color: #667eea;
+            font-style: italic;
+            display: none;
+            margin-top: 8px;
         }
     </style>
 </head>

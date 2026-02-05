@@ -16,14 +16,20 @@ function loadHistory() {
             // Escape text for different contexts
             const safeText = item.text.replace(/'/g, "\\'").replace(/\n/g, ' ');
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(item.text)}`;
+            const hasAnswer = !!item.answer;
 
             div.innerHTML = `
                 <div class="history-text">${item.text}</div>
+                <div id="loading-${item.timestamp}" class="loading-spinner">Analyzing question...</div>
+                <div id="answer-${item.timestamp}" class="answer-box ${hasAnswer ? 'visible' : ''}">
+                    <strong>Dashboard Answer:</strong><br>${item.answer || ''}
+                </div>
                 <div class="history-meta">
                     <span>${new Date(item.timestamp).toLocaleString()}</span>
                     <div style="display: flex; gap: 4px;">
                         <button onclick="copyText('${safeText}')">Copy</button>
-                        <button onclick="window.open('${searchUrl}', '_blank')">Find Answer</button>
+                        <button onclick="getAnswer(${item.timestamp}, '${safeText}')" ${hasAnswer ? 'style="display:none"' : ''} id="btn-${item.timestamp}">Get Answer</button>
+                        <button onclick="window.open('${searchUrl}', '_blank')">View Search</button>
                     </div>
                 </div>
             `;
@@ -34,6 +40,17 @@ function loadHistory() {
 
 function copyText(text) {
     navigator.clipboard.writeText(text);
+}
+
+function getAnswer(timestamp, text) {
+    document.getElementById(`loading-${timestamp}`).style.display = 'block';
+    document.getElementById(`btn-${timestamp}`).disabled = true;
+
+    chrome.runtime.sendMessage({
+        action: 'getAnswerForHistory',
+        text: text,
+        timestamp: timestamp
+    });
 }
 
 // Watch for changes to update list real-time

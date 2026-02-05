@@ -25,13 +25,40 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         return true;
     }
 
-    if (request.action === 'openSidePanel') {
-        chrome.sidePanel.open({ windowId: sender.tab.windowId });
+    if (request.action === 'getAnswerForHistory') {
+        fetchAnswer(request.text, request.timestamp);
         sendResponse({ success: true });
+        return true;
     }
 
     return false;
 });
+
+async function fetchAnswer(text, timestamp) {
+    try {
+        await setupOffscreenDocument(OFFSCREEN_DOCUMENT_PATH);
+        const response = await sendMessageToOffscreen({
+            action: 'fetchAnswer',
+            target: 'offscreen',
+            query: text
+        });
+
+        if (response && response.success) {
+            const data = await chrome.storage.local.get(['ocrHistory']);
+            let history = data.ocrHistory || [];
+
+            // Find the specific item and update it
+            const index = history.findIndex(item => item.timestamp === timestamp);
+            if (index !== -1) {
+                history[index].answer = response.answer;
+                await chrome.storage.local.set({ ocrHistory: history });
+                console.log('Background: History item updated with answer');
+            }
+        }
+    } catch (error) {
+        console.error('Background: Failed to fetch answer:', error);
+    }
+}
 
 // Handle Keyboard Shortcuts
 chrome.commands.onCommand.addListener((command) => {
@@ -241,8 +268,27 @@ async function sendMessageToOffscreen(message, retries = 3) {
 async function handleSuccessfulResult(text, tabId, isFromCache) {
     if (text === '') text = '(No text found in selection)';
 
-    await saveResultToHistory(text, isFromCache ? 100 : undefined);
+    const timestamp = Date.now();
+    await saveResultToHistory(text, isFromCache ? 100 : undefined, timestamp);
     await chrome.storage.local.set({ lastOcrResult: text, ocrStatus: 'idle' });
+
+    // AUTO-OPEN SIDE PANEL: Ensures the dashboard is visible
+    try {
+        chrome.sidePanel.setOptions({
+            tabId: tabId,
+            path: 'sidepanel.html',
+            enabled: true
+        });
+        // Note: Actual open command requires user gesture or specific trigger
+        // but setting it as enabled/path ensures it's ready.
+    } catch (e) {
+        console.warn('Background: Could not set side panel options:', e);
+    }
+
+    // AUTO-FETCH ANSWER: Bring results to the dashboard
+    if (text !== '(No text found in selection)') {
+        fetchAnswer(text, timestamp);
+    }
 
     await copyToClipboard(text, tabId);
     showNotification(isFromCache ? 'OCR (Cached) ✓' : 'OCR Complete! ✓', text);
