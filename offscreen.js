@@ -25,34 +25,71 @@ async function initTesseract() {
 // Handle messages from background service worker
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     if (request.action === 'performOCR') {
-        processOCR(request.data).then(function (text) {
+        console.log('Offscreen: Received OCR request');
+        handleProcessing(request.data).then(function (text) {
             sendResponse({ success: true, text: text });
         }).catch(function (error) {
+            console.error('Offscreen error:', error);
             sendResponse({ success: false, error: error.message });
         });
-        return true; // Keep message channel open for async response
+        return true;
     }
 });
 
-async function processOCR(imageBlobUrl) {
-    try {
-        console.log('Offscreen: Fetching image from blob URL...');
-        var response = await fetch(imageBlobUrl);
-        var blob = await response.blob();
+async function handleProcessing(data) {
+    var dataUrl = data.dataUrl;
+    var captureData = data.captureData;
 
+    try {
+        // Step 1: Crop the image using native Canvas/Image
+        console.log('Offscreen: Cropping image...');
+        var croppedBlob = await cropImage(dataUrl, captureData);
+
+        // Step 2: Initialize Tesseract
         var worker = await initTesseract();
+
+        // Step 3: Perform OCR
         console.log('Offscreen: Starting Tesseract recognition...');
-        var result = await worker.recognize(blob);
+        var result = await worker.recognize(croppedBlob);
 
         var text = (result && result.data && result.data.text) ? result.data.text.trim() : '';
         console.log('Offscreen: OCR processed successfully, length:', text.length);
 
-        // Revoke the blob URL to free memory
-        URL.revokeObjectURL(imageBlobUrl);
-
         return text;
     } catch (error) {
-        console.error('Offscreen: performOCR error:', error);
-        throw new Error('OCR recognition failed - ' + error.message);
+        console.error('Offscreen processing error:', error);
+        throw error;
     }
+}
+
+async function cropImage(dataUrl, captureData) {
+    return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () {
+            try {
+                var canvas = document.createElement('canvas');
+                canvas.width = captureData.width;
+                canvas.height = captureData.height;
+                var ctx = canvas.getContext('2d');
+
+                ctx.drawImage(
+                    img,
+                    captureData.x, captureData.y,
+                    captureData.width, captureData.height,
+                    0, 0,
+                    captureData.width, captureData.height
+                );
+
+                canvas.toBlob(function (blob) {
+                    resolve(blob);
+                }, 'image/png');
+            } catch (e) {
+                reject(e);
+            }
+        };
+        img.onerror = function () {
+            reject(new Error('Failed to load image for cropping'));
+        };
+        img.src = dataUrl;
+    });
 }

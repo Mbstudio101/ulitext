@@ -1,45 +1,30 @@
 // Offscreen Document path
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 
-// Handle screenshot capture requests
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-    if (request.action === 'captureScreenshot') {
-        // Acknowledge receipt immediately
-        sendResponse({ success: true, message: 'Processing capture request...' });
-
-        // Handle capture asynchronously
-        handleScreenshotCapture(request.data, sender.tab.id);
-    }
-    return true; // Keep message channel open for async response
-});
-
 async function handleScreenshotCapture(captureData, tabId) {
     console.log('Starting screenshot capture handle...', captureData);
     try {
         notifyPopup({ action: 'ocrProgress', message: 'Capturing screenshot...' });
 
-        // Capture visible tab
+        // Capture visible tab (returns Base64 Data URL)
         var dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
         console.log('Full screenshot captured (length: ' + dataUrl.length + ')');
 
-        // Create Offscreen Document
+        // Ensure Offscreen Document exists
         notifyPopup({ action: 'ocrProgress', message: 'Preparing OCR engine...' });
         await setupOffscreenDocument(OFFSCREEN_DOCUMENT_PATH);
 
-        // Crop image to selection
-        notifyPopup({ action: 'ocrProgress', message: 'Processing image...' });
-        var croppedBlob = await cropImage(dataUrl, captureData);
-        console.log('Image cropped successfully, blob size:', croppedBlob.size);
-
-        // Create a blob URL for the offscreen document to use
-        var blobUrl = URL.createObjectURL(croppedBlob);
-
-        // Perform OCR via Offscreen Document
+        // Hand off EVERYTHING (cropping + OCR) to the offscreen document
+        // This avoids all SW restrictions (Image, Canvas, URL.createObjectURL, Worker)
         notifyPopup({ action: 'ocrProgress', message: 'Extracting text...' });
+
+        console.log('Sending data to offscreen document...');
         var response = await chrome.runtime.sendMessage({
             action: 'performOCR',
-            data: blobUrl,
-            offscreen: true
+            data: {
+                dataUrl: dataUrl,
+                captureData: captureData
+            }
         });
 
         if (!response || !response.success) {
@@ -62,52 +47,20 @@ async function handleScreenshotCapture(captureData, tabId) {
         notifyPopup({ action: 'ocrComplete', text: text });
 
     } catch (error) {
-        console.error('Screenshot processing failed:', error);
+        console.error('OCR Pipeline failed:', error);
         showNotification('OCR Failed', 'Error: ' + error.message, true);
         notifyPopup({ action: 'ocrError', error: error.message });
     }
 }
 
 async function setupOffscreenDocument(path) {
-    // Check if offscreen document already exists
     if (await chrome.offscreen.hasDocument()) return;
 
-    // Create offscreen document
     await chrome.offscreen.createDocument({
         url: path,
-        reasons: ['WORKERS'], // Tesseract uses workers
-        justification: 'Tesseract.js requires Web Workers which are not available in Service Workers'
+        reasons: ['WORKERS', 'DOM_SCRAPING'],
+        justification: 'Tesseract.js requires Web Workers and Canvas which are restricted in Service Workers'
     });
-}
-
-async function cropImage(dataUrl, captureData) {
-    try {
-        console.log('Cropping image with data:', captureData);
-        // Use fetch to get blob from data URL
-        var response = await fetch(dataUrl);
-        var blob = await response.blob();
-        var imageBitmap = await createImageBitmap(blob);
-        console.log('Original image dimensions:', imageBitmap.width, 'x', imageBitmap.height);
-
-        var canvas = new OffscreenCanvas(captureData.width, captureData.height);
-        var ctx = canvas.getContext('2d');
-
-        // Draw the cropped portion
-        ctx.drawImage(
-            imageBitmap,
-            captureData.x, captureData.y,
-            captureData.width, captureData.height,
-            0, 0,
-            captureData.width, captureData.height
-        );
-
-        // Convert to blob
-        var croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
-        return croppedBlob;
-    } catch (error) {
-        console.error('cropImage error:', error);
-        throw new Error('Failed to crop image: ' + error.message);
-    }
 }
 
 async function copyToClipboard(text, tabId) {
