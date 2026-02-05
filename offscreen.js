@@ -24,13 +24,18 @@ async function initTesseract() {
 
 // Handle messages from background service worker
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-    if (request.action === 'performOCR') {
-        console.log('Offscreen: Received OCR request from', sender.id);
+    // Only respond if targeted to offscreen
+    if (request.action === 'performOCR' && request.target === 'offscreen') {
+        console.log('Offscreen: Received OCR request');
         handleProcessing(request.data).then(function (text) {
             sendResponse({ success: true, text: text });
         }).catch(function (error) {
-            console.error('Offscreen error:', error);
-            sendResponse({ success: false, error: error.message });
+            console.error('Offscreen Error Cache:', error);
+            // Serialize error to ensure it survives IPC
+            sendResponse({
+                success: false,
+                error: error.message || error.toString() || 'Unknown Offscreen Error'
+            });
         });
         return true;
     }

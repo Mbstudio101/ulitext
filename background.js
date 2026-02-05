@@ -8,14 +8,18 @@ var ENABLE_UPDATE_CHECKS = true;
 
 // Handle messages from all parts of the extension
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+    // ONLY respond to captureScreenshot. Ignore messages meant for the offscreen doc.
     if (request.action === 'captureScreenshot') {
+        console.log('Background: Received capture request');
         // Acknowledge receipt immediately to content script
         sendResponse({ success: true, message: 'Processing capture request...' });
 
         // Handle capture asynchronously
         handleScreenshotCapture(request.data, sender.tab.id);
+        return true;
     }
-    return true; // Keep message channel open for async response
+    // Return false for other messages so we don't block the channel
+    return false;
 });
 
 async function handleScreenshotCapture(captureData, tabId) {
@@ -41,10 +45,10 @@ async function handleScreenshotCapture(captureData, tabId) {
         // Track status in storage
         await chrome.storage.local.set({ ocrStatus: 'processing', lastOcrError: null });
 
-        // Send data to offscreen with retries (in case it's still loading)
         console.log('Background: Sending data to offscreen document...');
         var response = await sendMessageToOffscreen({
             action: 'performOCR',
+            target: 'offscreen', // Explicitly target the offscreen
             data: {
                 dataUrl: dataUrl,
                 captureData: captureData
@@ -52,7 +56,9 @@ async function handleScreenshotCapture(captureData, tabId) {
         });
 
         if (!response || !response.success) {
-            throw new Error(response ? response.error : 'No response from OCR engine');
+            var errorMsg = response ? (response.error || 'Unknown OCR logic error') : 'No response from OCR engine';
+            console.error('Background: OCR Engine Error:', errorMsg);
+            throw new Error(errorMsg);
         }
 
         var text = response.text;
