@@ -57,17 +57,21 @@
                     return;
                 }
 
+                // Clear previous result and show starting state
+                resultText.value = '';
+                showStatus('Preparing capture...', 'info');
+
                 // Try to send message to content script
                 chrome.tabs.sendMessage(tab.id, { action: 'startCapture' }, function (response) {
                     if (chrome.runtime.lastError) {
                         // Content script not loaded, inject it programmatically
-                        console.log('Content script not loaded, injecting programmatically...');
+                        console.log('Popup: Content script not loaded, injecting...');
                         chrome.scripting.executeScript({
                             target: { tabId: tab.id },
                             files: ['content.js']
                         }, function () {
                             if (chrome.runtime.lastError) {
-                                showStatus('Error: Unable to inject content script. Try reloading the page.', 'error');
+                                showStatus('Error: Unable to inject content script.', 'error');
                                 return;
                             }
 
@@ -80,16 +84,18 @@
                                 setTimeout(function () {
                                     chrome.tabs.sendMessage(tab.id, { action: 'startCapture' }, function (response) {
                                         if (chrome.runtime.lastError) {
-                                            showStatus('Error: Content script injection failed', 'error');
+                                            showStatus('Error: Capture start failed', 'error');
                                         } else {
-                                            showStatus('Starting capture...', 'info');
+                                            showStatus('Select area on page...', 'info');
                                         }
                                     });
-                                }, 100);
+                                }, 150);
                             });
                         });
                     } else {
-                        showStatus('Starting capture...', 'info');
+                        showStatus('Select area on page...', 'info');
+                        // Close popup so user can see the overlay (optional, but standard for these tools)
+                        // setTimeout(() => window.close(), 1000); 
                     }
                 });
             }
