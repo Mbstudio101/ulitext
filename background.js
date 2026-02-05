@@ -11,13 +11,18 @@ var ENABLE_UPDATE_CHECKS = true;
 // Global OCR worker
 var ocrWorker = null;
 
-// Initialize Tesseract worker
+// Initialize Tesseract worker with local paths
 async function initTesseract() {
     if (ocrWorker) return ocrWorker;
 
     try {
-        ocrWorker = await Tesseract.createWorker('eng');
-        console.log('Tesseract worker initialized');
+        // Configure Tesseract to use local files
+        ocrWorker = await Tesseract.createWorker('eng', 1, {
+            workerPath: chrome.runtime.getURL('tesseract-data/tesseract-worker.min.js'),
+            langPath: chrome.runtime.getURL('tesseract-data'),
+            corePath: chrome.runtime.getURL('tesseract-data/tesseract-core.wasm.js')
+        });
+        console.log('Tesseract worker initialized with local files');
         return ocrWorker;
     } catch (error) {
         console.error('Failed to initialize Tesseract:', error);
