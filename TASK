@@ -1,0 +1,730 @@
+# Chrome Extension Development Task: Screenshot OCR with Auto-Update
+
+Extnstion name is : Ulitext
+
+
+## Project Overview
+Build a fully functional Chrome extension that captures screenshots via drag-to-select interface, performs OCR (Optical Character Recognition) using Tesseract.js, and automatically copies extracted text to clipboard. The extension must include auto-update functionality to check for new releases.
+
+---
+
+## Core Requirements
+
+### 1. Screenshot Capture System
+- Implement drag-to-select overlay on any webpage
+- Visual feedback with dimmed screen and blue selection box
+- Display instructions: "Click and drag to select area • Press ESC to cancel"
+- Support ESC key to cancel selection
+- Minimum selection size validation (10x10 pixels)
+- Handle high-DPI displays with proper device pixel ratio
+- Remove overlay elements before capture for clean screenshots
+
+### 2. OCR Processing
+- Integrate Tesseract.js v5 from CDN: `https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js`
+- Initialize worker on first use and reuse for subsequent captures
+- Support English language recognition
+- Process images in OffscreenCanvas for cropping
+- Handle errors gracefully with user notifications
+- Display processing status to user
+
+### 3. Clipboard & Storage
+- Automatically copy extracted text to clipboard after OCR
+- Store last OCR result in chrome.storage.local
+- Persist results across browser sessions
+- Provide manual copy button in popup
+
+### 4. User Interface
+- **Popup Design:**
+  - Gradient header (purple/blue: #667eea to #764ba2)
+  - Large "Capture Screenshot" button with camera icon
+  - Textarea for viewing/editing extracted text
+  - Copy button with visual feedback (green checkmark when clicked)
+  - Status messages with spinner for processing
+  - Footer with version number
+  - Responsive design (320px width)
+
+### 5. Notification System
+- Show Chrome notifications on completion
+- Display text preview (first 100 characters)
+- Success notifications: "OCR Complete! ✓"
+- Error notifications with descriptive messages
+- Click notification to open popup
+
+### 6. **Auto-Update System (CRITICAL)**
+Implement automatic update checking and notification:
+
+#### Version Management
+- Current version stored in manifest.json
+- Version format: "1.0.0" (semantic versioning)
+- Track last update check timestamp in chrome.storage.local
+
+#### Update Check Mechanism
+- Check for updates on extension startup
+- Check every 24 hours while extension is active
+- Fetch latest version from GitHub releases API or custom update server
+- Compare current version with latest available version
+- Use semantic versioning comparison (major.minor.patch)
+
+#### Update Detection API Endpoints
+Choose one of these methods:
+
+**Method A: GitHub Releases (Recommended)**
+```javascript
+// Fetch from GitHub API
+https://api.github.com/repos/[username]/[repo]/releases/latest
+
+// Response includes:
+// - tag_name: "v1.0.1"
+// - name: "Release name"
+// - body: "Release notes"
+// - published_at: "2025-02-05T..."
+// - assets: [download links]
+```
+
+**Method B: Custom Update Manifest**
+```javascript
+// Fetch from your server
+https://yourserver.com/extensions/screenshot-ocr/update.json
+
+// JSON structure:
+{
+  "version": "1.0.1",
+  "release_date": "2025-02-05",
+  "download_url": "https://...",
+  "release_notes": "Bug fixes and improvements",
+  "min_chrome_version": "88"
+}
+```
+
+#### Update Notification UI
+When update is available:
+- Show Chrome notification: "📦 Update Available: Screenshot OCR v[X.X.X]"
+- Add badge to extension icon with "NEW" or version number
+- Display update banner in popup:
+  ```
+  🎉 New Version Available: v1.0.1
+  [View Release Notes] [Update Now]
+  ```
+- Store "update dismissed" flag if user dismisses
+
+#### Update Installation
+- Provide "Update Now" button in notification/popup
+- Open Chrome Web Store page (if published)
+- OR provide download link to latest .zip
+- OR provide GitHub releases page link
+- Show instructions: "Go to chrome://extensions/ and click Update"
+
+#### Update Check Code Structure
+```javascript
+// In background.js
+
+const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const UPDATE_URL = 'https://api.github.com/repos/[user]/[repo]/releases/latest';
+
+async function checkForUpdates() {
+  try {
+    // Get current version from manifest
+    const currentVersion = chrome.runtime.getManifest().version;
+    
+    // Get last check time
+    const { lastUpdateCheck } = await chrome.storage.local.get('lastUpdateCheck');
+    const now = Date.now();
+    
+    // Check if 24 hours have passed
+    if (lastUpdateCheck && (now - lastUpdateCheck) < UPDATE_CHECK_INTERVAL) {
+      return;
+    }
+    
+    // Fetch latest version
+    const response = await fetch(UPDATE_URL);
+    const data = await response.json();
+    const latestVersion = data.tag_name.replace('v', '');
+    
+    // Compare versions
+    if (isNewerVersion(latestVersion, currentVersion)) {
+      // Store update info
+      await chrome.storage.local.set({
+        updateAvailable: true,
+        latestVersion: latestVersion,
+        releaseNotes: data.body,
+        downloadUrl: data.html_url
+      });
+      
+      // Show notification
+      showUpdateNotification(latestVersion);
+      
+      // Set badge
+      chrome.action.setBadgeText({ text: 'NEW' });
+      chrome.action.setBadgeBackgroundColor({ color: '#10b981' });
+    }
+    
+    // Update last check time
+    await chrome.storage.local.set({ lastUpdateCheck: now });
+    
+  } catch (error) {
+    console.error('Update check failed:', error);
+  }
+}
+
+function isNewerVersion(latest, current) {
+  const latestParts = latest.split('.').map(Number);
+  const currentParts = current.split('.').map(Number);
+  
+  for (let i = 0; i < 3; i++) {
+    if (latestParts[i] > currentParts[i]) return true;
+    if (latestParts[i] < currentParts[i]) return false;
+  }
+  return false;
+}
+
+function showUpdateNotification(version) {
+  chrome.notifications.create('update-available', {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: '📦 Update Available',
+    message: `Screenshot OCR v${version} is now available!`,
+    buttons: [
+      { title: 'View Details' },
+      { title: 'Dismiss' }
+    ],
+    priority: 2
+  });
+}
+
+// Check on extension install/update
+chrome.runtime.onInstalled.addListener(function(details) {
+  if (details.reason === 'install' || details.reason === 'update') {
+    checkForUpdates();
+  }
+});
+
+// Check periodically
+chrome.alarms.create('updateCheck', { periodInMinutes: 1440 }); // 24 hours
+chrome.alarms.onAlarm.addListener(function(alarm) {
+  if (alarm.name === 'updateCheck') {
+    checkForUpdates();
+  }
+});
+
+// Handle notification clicks
+chrome.notifications.onButtonClicked.addListener(function(notifId, btnIdx) {
+  if (notifId === 'update-available') {
+    if (btnIdx === 0) {
+      // View Details
+      chrome.storage.local.get(['downloadUrl'], function(result) {
+        chrome.tabs.create({ url: result.downloadUrl });
+      });
+    }
+    chrome.notifications.clear(notifId);
+  }
+});
+```
+
+#### Update Banner in Popup
+```html
+<!-- Add to popup.html -->
+<div class="update-banner" id="updateBanner" style="display: none;">
+  <div class="update-content">
+    <span class="update-icon">🎉</span>
+    <div class="update-text">
+      <strong>New version available: v<span id="updateVersion"></span></strong>
+      <p id="updateMessage"></p>
+    </div>
+    <div class="update-actions">
+      <button id="viewReleaseBtn" class="btn-small">View Release</button>
+      <button id="dismissUpdateBtn" class="btn-small btn-secondary">Dismiss</button>
+    </div>
+  </div>
+</div>
+```
+
+```javascript
+// Add to popup.js
+chrome.storage.local.get(['updateAvailable', 'latestVersion', 'releaseNotes', 'downloadUrl'], function(result) {
+  if (result.updateAvailable) {
+    document.getElementById('updateBanner').style.display = 'block';
+    document.getElementById('updateVersion').textContent = result.latestVersion;
+    document.getElementById('updateMessage').textContent = 'Click to download the latest version';
+    
+    document.getElementById('viewReleaseBtn').addEventListener('click', function() {
+      chrome.tabs.create({ url: result.downloadUrl });
+    });
+    
+    document.getElementById('dismissUpdateBtn').addEventListener('click', function() {
+      document.getElementById('updateBanner').style.display = 'none';
+      chrome.storage.local.set({ updateAvailable: false });
+    });
+  }
+});
+```
+
+#### Update Banner Styling
+```css
+/* Add to popup.html styles */
+.update-banner {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  padding: 12px 16px;
+  margin: -16px -16px 16px -16px;
+  border-radius: 0;
+}
+
+.update-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.update-icon {
+  font-size: 24px;
+}
+
+.update-text {
+  flex: 1;
+}
+
+.update-text strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.update-text p {
+  font-size: 12px;
+  margin: 0;
+  opacity: 0.9;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background: white;
+  color: #10b981;
+  font-weight: 600;
+}
+
+.btn-small.btn-secondary {
+  background: transparent;
+  border: 1px solid white;
+  color: white;
+}
+```
+
+---
+
+## Technical Specifications
+
+### File Structure
+```
+screenshot-ocr-extension/
+├── manifest.json           # Extension configuration (Manifest V3)
+├── popup.html             # Extension popup interface
+├── popup.js               # Popup logic and UI handlers
+├── background.js          # Service worker (OCR + updates)
+├── content.js             # Screenshot selection overlay
+├── content.css            # Content script styles
+├── tesseract.min.js       # OCR library loader
+├── icons/
+│   ├── icon16.png         # 16x16 toolbar icon
+│   ├── icon48.png         # 48x48 management icon
+│   └── icon128.png        # 128x128 store icon
+├── README.md              # Full documentation
+├── INSTALL.md             # Installation guide
+├── USAGE.md               # Usage examples
+├── QUICKSTART.md          # Quick start guide
+├── TROUBLESHOOTING.md     # Common issues & solutions
+└── TESTING.md             # Testing checklist
+```
+
+### manifest.json Configuration
+```json
+{
+  "manifest_version": 3,
+  "name": "Screenshot OCR",
+  "version": "1.0.0",
+  "description": "Capture screenshots and instantly convert them to text with OCR",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
+```
+
+### Code Compatibility
+- **Use ES5 syntax** for maximum compatibility
+- Use `var` instead of `let`/`const`
+- Use `function() {}` instead of arrow functions `() =>`
+- Use string concatenation instead of template literals
+- Use Promise chains instead of async/await in content scripts
+- Use callback-based chrome APIs with Promise wrappers
+
+### Icon Requirements
+Generate three icon sizes using Python PIL or similar:
+- 16x16 pixels (toolbar icon)
+- 48x48 pixels (extension management)
+- 128x128 pixels (Chrome Web Store)
+
+Design: Camera icon on gradient background (#667eea)
+- Main camera body (white rectangle with rounded corners)
+- Lens circle (gradient color)
+- Flash indicator (yellow/gold rectangle)
+
+---
+
+## Implementation Details
+
+### Content Script (content.js)
+**Responsibilities:**
+- Inject selection overlay on postMessage
+- Handle mouse events (mousedown, mousemove, mouseup)
+- Calculate selection coordinates with DPI scaling
+- Send capture request to background script
+- Clean up overlay elements
+- Handle ESC key cancellation
+
+**Key Functions:**
+- `startCapture()` - Initialize overlay
+- `createOverlay()` - Create DOM elements
+- `onMouseDown/Move/Up()` - Handle selection
+- `captureArea()` - Send to background
+- `cleanup()` - Remove elements
+
+### Background Script (background.js)
+**Responsibilities:**
+- Import Tesseract.js from CDN
+- Initialize and manage OCR worker
+- Capture visible tab screenshot
+- Crop image to selection area
+- Perform OCR processing
+- Save results to storage
+- Send notifications
+- Copy to clipboard
+- **Check for updates periodically**
+- **Notify user of new versions**
+- **Manage update badges and banners**
+
+**Key Functions:**
+- `initTesseract()` - Initialize worker once
+- `handleScreenshotCapture()` - Main flow
+- `cropImage()` - Canvas cropping
+- `performOCR()` - Tesseract processing
+- `showNotification()` - Chrome notifications
+- `copyToClipboard()` - Inject clipboard script
+- `checkForUpdates()` - Fetch latest version
+- `isNewerVersion()` - Compare version numbers
+- `showUpdateNotification()` - Alert user
+
+### Popup Script (popup.js)
+**Responsibilities:**
+- Handle "Capture Screenshot" button
+- Load and display last result
+- Handle copy button
+- Show status messages
+- Listen for OCR results
+- **Display update banner when available**
+- **Handle update button clicks**
+- **Dismiss update notifications**
+
+**Key Functions:**
+- `showStatus()` - Display messages
+- Event listeners for buttons
+- Message listener for results
+- Storage retrieval
+- **Update banner display logic**
+- **Version comparison display**
+
+---
+
+## Error Handling
+
+### Required Error Cases
+1. **Screenshot capture fails** - Show notification
+2. **OCR processing fails** - Graceful degradation
+3. **Clipboard access denied** - Manual copy option
+4. **Content script injection fails** - Try alternate method
+5. **Storage quota exceeded** - Clear old data
+6. **Network errors** - Cache Tesseract data
+7. **Invalid selection** - Cancel gracefully
+8. **Update check fails** - Silent failure, try next cycle
+9. **Version comparison errors** - Log and continue
+
+---
+
+## Testing Requirements
+
+### Functional Tests
+1. ✅ Extension loads without errors
+2. ✅ Popup opens and displays correctly
+3. ✅ Selection overlay appears on click
+4. ✅ Screenshot captures selected area
+5. ✅ OCR processes and extracts text
+6. ✅ Text auto-copies to clipboard
+7. ✅ Results persist across sessions
+8. ✅ Notifications appear correctly
+9. ✅ Manual copy button works
+10. ✅ ESC cancels selection
+11. ✅ **Update check runs on install**
+12. ✅ **Update notification appears when available**
+13. ✅ **Badge shows on extension icon**
+14. ✅ **Update banner displays in popup**
+15. ✅ **"View Release" opens correct URL**
+
+### Edge Cases
+1. Very small selections (< 10px)
+2. Very large selections (> 2000px)
+3. Empty/blank areas
+4. Multiple rapid captures
+5. Page refresh during capture
+6. Network offline (after initial load)
+7. Restricted pages (chrome://)
+8. **Invalid update server response**
+9. **Network failure during update check**
+10. **Malformed version numbers**
+
+### Browser Compatibility
+- Google Chrome 88+
+- Microsoft Edge 88+
+- Brave Browser
+- Any Chromium-based browser
+
+---
+
+## Documentation Requirements
+
+### README.md
+- Feature overview
+- Installation instructions
+- Usage guide
+- Technical details
+- Troubleshooting
+- Privacy policy
+- Version history
+- **Update mechanism explanation**
+
+### INSTALL.md
+- Step-by-step installation
+- Screenshots/images (optional)
+- Common installation errors
+- Verification steps
+
+### USAGE.md
+- Detailed usage examples
+- Best practices for OCR accuracy
+- Common use cases
+- Keyboard shortcuts
+- Tips and tricks
+
+### QUICKSTART.md
+- 2-minute quick start
+- Essential steps only
+- File structure overview
+
+### TROUBLESHOOTING.md
+- Common errors and solutions
+- Console debugging tips
+- Extension reload procedures
+- Network troubleshooting
+
+### TESTING.md
+- Complete testing checklist
+- 30+ test cases
+- Pass/fail tracking
+- Performance benchmarks
+
+---
+
+## Performance Targets
+
+- **Selection overlay:** < 100ms to appear
+- **Small text OCR:** 2-5 seconds
+- **Medium text OCR:** 5-10 seconds
+- **Large text OCR:** 10-20 seconds
+- **First time setup:** 30-60 seconds (downloads OCR data)
+- **Popup open:** < 200ms
+- **Update check:** < 3 seconds
+- **Update notification:** < 1 second after detection
+
+---
+
+## Privacy & Security
+
+- All OCR processing happens **locally** (client-side)
+- No data sent to external servers (except update checks)
+- No tracking or analytics
+- No user data collection
+- Screenshots processed in memory only
+- Only last result stored locally
+- Update checks use public APIs only
+- No personal data in update requests
+
+---
+
+## Deliverables
+
+### Required Files
+1. ✅ All source code files (.html, .js, .css, .json)
+2. ✅ Icon files (16px, 48px, 128px)
+3. ✅ Complete documentation (6 markdown files)
+4. ✅ **Working update check system**
+5. ✅ **Update notification UI**
+6. ✅ **Version comparison logic**
+
+### Validation Checklist
+- [ ] Extension loads in Developer Mode
+- [ ] No console errors
+- [ ] All features work as described
+- [ ] Screenshots capture correctly
+- [ ] OCR extracts text accurately
+- [ ] Clipboard auto-copy works
+- [ ] Notifications appear
+- [ ] Storage persists
+- [ ] Icons display properly
+- [ ] UI is responsive and polished
+- [ ] **Update check runs automatically**
+- [ ] **Update notification appears (test with mock data)**
+- [ ] **Badge displays when update available**
+- [ ] **Update banner shows in popup**
+- [ ] **Release notes/download link works**
+
+---
+
+## Update Deployment Workflow
+
+### For Developer
+1. Make code changes
+2. Increment version in manifest.json (e.g., 1.0.0 → 1.0.1)
+3. Create GitHub release with tag (e.g., v1.0.1)
+4. Add release notes
+5. Attach .zip file of extension
+6. Publish release
+
+### For User
+1. Extension checks for updates automatically
+2. Notification appears if update available
+3. User clicks "View Details" or opens popup
+4. Clicks "Update Now" or "View Release"
+5. Downloads new version or goes to store
+6. Manually updates extension (chrome://extensions/ → Update)
+
+### Alternative: Chrome Web Store Auto-Update
+If published to Chrome Web Store:
+- Chrome updates automatically
+- Just increment version and publish
+- Users get updates silently
+- Keep update checker for transparency
+- Show changelog in popup after update
+
+---
+
+## Configuration Variables
+
+### Update Check Settings
+```javascript
+// Customize these in background.js
+const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const UPDATE_URL = 'YOUR_UPDATE_ENDPOINT'; // GitHub or custom
+const GITHUB_REPO = 'username/repository'; // If using GitHub
+const ENABLE_UPDATE_CHECKS = true; // Master switch
+const SHOW_UPDATE_BADGE = true; // Icon badge
+const SHOW_UPDATE_BANNER = true; // Popup banner
+const SHOW_UPDATE_NOTIFICATION = true; // Chrome notification
+```
+
+---
+
+## Success Criteria
+
+The extension is complete when:
+1. ✅ All core features work without errors
+2. ✅ OCR accuracy is acceptable for clear text
+3. ✅ UI is polished and user-friendly
+4. ✅ Documentation is comprehensive
+5. ✅ No console errors in normal operation
+6. ✅ Works on all major Chromium browsers
+7. ✅ Passes all 30 test cases
+8. ✅ **Update check system is functional**
+9. ✅ **Users are notified of new versions**
+10. ✅ **Update process is documented and tested**
+
+---
+
+## Additional Notes
+
+- Tesseract.js downloads ~10MB of data on first use
+- OCR works best with clear, high-contrast text
+- Chrome internal pages (chrome://) cannot be captured
+- Extension size should be < 2MB (excluding Tesseract data)
+- Use semantic versioning for all releases
+- Test update mechanism with mock/test releases first
+
+---
+
+## Example Update Server Response
+
+If hosting your own update endpoint:
+
+```json
+{
+  "version": "1.0.1",
+  "release_date": "2025-02-05T12:00:00Z",
+  "release_notes": "## What's New\n- Fixed clipboard issues\n- Improved OCR accuracy\n- Added update notifications",
+  "download_url": "https://github.com/user/repo/releases/download/v1.0.1/screenshot-ocr-v1.0.1.zip",
+  "chrome_store_url": "https://chrome.google.com/webstore/detail/...",
+  "min_chrome_version": "88",
+  "breaking_changes": false
+}
+```
+
+---
+
+## Priority Order
+
+1. **Core functionality** (screenshot + OCR) - CRITICAL
+2. **UI/UX polish** - HIGH
+3. **Error handling** - HIGH
+4. **Update system** - HIGH
+5. **Documentation** - MEDIUM
+6. **Testing** - MEDIUM
+7. **Performance optimization** - LOW
+
+---
+
+**Start with getting the basic OCR working, then add the update system, then polish everything else.**
+
+Good luck building! 🚀

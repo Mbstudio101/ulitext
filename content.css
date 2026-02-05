@@ -1,0 +1,40 @@
+/* Screenshot Selection Overlay Styles */
+
+.ocr-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 2147483647;
+  cursor: crosshair;
+}
+
+.ocr-selection-box {
+  position: fixed;
+  border: 2px solid #667eea;
+  background: rgba(102, 126, 234, 0.2);
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+.ocr-instructions {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  z-index: 2147483648;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.ocr-instructions::before {
+  content: '📸 ';
+}
