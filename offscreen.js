@@ -81,13 +81,16 @@ async function cropImage(dataUrl, captureData) {
                 );
 
                 canvas.toBlob(function (blob) {
+                    console.log('Offscreen: Crop complete, blob size:', blob ? blob.size : 'null');
                     resolve(blob);
                 }, 'image/png');
             } catch (e) {
+                console.error('Offscreen: Crop drawing error:', e);
                 reject(e);
             }
         };
-        img.onerror = function () {
+        img.onerror = function (err) {
+            console.error('Offscreen: Image load error:', err);
             reject(new Error('Failed to load image for cropping'));
         };
         img.src = dataUrl;

@@ -49,10 +49,15 @@ async function handleScreenshotCapture(captureData, tabId) {
         }
 
         var text = response.text;
-        console.log('OCR Complete! Result length:', text.length);
+        console.log('Background: OCR text received, length:', text.length);
+        if (text.length === 0) {
+            console.warn('Background: OCR returned empty text');
+            text = '(No text found in selection)';
+        }
 
         // Save result to storage
         await chrome.storage.local.set({ lastOcrResult: text });
+        console.log('Background: Saved result to storage');
 
         // Copy to clipboard
         await copyToClipboard(text, tabId);
@@ -61,6 +66,7 @@ async function handleScreenshotCapture(captureData, tabId) {
         showNotification('OCR Complete! ✓', text);
 
         // Notify popup (if it's still open)
+        console.log('Background: Notifying popup of completion...');
         notifyPopup({ action: 'ocrComplete', text: text });
 
     } catch (error) {

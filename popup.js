@@ -115,12 +115,17 @@
 
     // Listen for OCR results
     chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+        console.log('Popup: Received message:', request.action);
         if (request.action === 'ocrComplete') {
-            resultText.value = request.text;
+            var text = request.text || ' (No text detected) ';
+            console.log('Popup: OCR Complete, text length:', text.length);
+            resultText.value = text;
             showStatus('OCR Complete! ✓', 'success');
         } else if (request.action === 'ocrError') {
+            console.error('Popup: OCR Error:', request.error);
             showStatus('Error: ' + request.error, 'error');
         } else if (request.action === 'ocrProgress') {
+            console.log('Popup: Progress:', request.message);
             showStatus(request.message, 'info');
         }
     });
