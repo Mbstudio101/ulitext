@@ -19,11 +19,40 @@
     var manifest = chrome.runtime.getManifest();
     versionSpan.textContent = manifest.version;
 
-    // Load last result from storage
-    chrome.storage.local.get(['lastOcrResult'], function (result) {
-        console.log('Popup: Loaded from storage, text length:', result.lastOcrResult ? result.lastOcrResult.length : 0);
-        if (result.lastOcrResult) {
+    // Load last result and check current status
+    chrome.storage.local.get(['lastOcrResult', 'ocrStatus', 'lastOcrError'], function (result) {
+        console.log('Popup: Initial load, status:', result.ocrStatus);
+
+        if (result.ocrStatus === 'processing') {
+            showStatus('OCR in progress...', 'info');
+            resultText.value = '';
+            resultText.placeholder = 'Processing your selection...';
+        } else if (result.ocrStatus === 'error') {
+            showStatus('Error: ' + (result.lastOcrError || 'Unknown error'), 'error');
+        } else if (result.lastOcrResult) {
             resultText.value = result.lastOcrResult;
+        }
+    });
+
+    // Watch for storage changes (handles updates while popup is open)
+    chrome.storage.onChanged.addListener(function (changes, namespace) {
+        if (namespace !== 'local') return;
+
+        if (changes.lastOcrResult) {
+            console.log('Popup: Result updated in storage');
+            resultText.value = changes.lastOcrResult.newValue;
+        }
+
+        if (changes.ocrStatus) {
+            console.log('Popup: Status changed to:', changes.ocrStatus.newValue);
+            if (changes.ocrStatus.newValue === 'processing') {
+                showStatus('OCR in progress...', 'info');
+                resultText.value = '';
+            } else if (changes.ocrStatus.newValue === 'idle') {
+                showStatus('OCR Complete! ✓', 'success');
+            } else if (changes.ocrStatus.newValue === 'error') {
+                // Error handled via lastOcrError change
+            }
         }
     });
 

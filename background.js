@@ -35,7 +35,13 @@ async function handleScreenshotCapture(captureData, tabId) {
         // This avoids all SW restrictions (Image, Canvas, URL.createObjectURL, Worker)
         notifyPopup({ action: 'ocrProgress', message: 'Extracting text...' });
 
-        console.log('Sending data to offscreen document...');
+        // Create a blob URL for the offscreen document to use
+        // Note: We still pass dataUrl directly for now as it's more reliable
+
+        // Track status in storage
+        await chrome.storage.local.set({ ocrStatus: 'processing', lastOcrError: null });
+
+        console.log('Background: Sending data to offscreen document...');
         var response = await chrome.runtime.sendMessage({
             action: 'performOCR',
             data: {
@@ -55,9 +61,12 @@ async function handleScreenshotCapture(captureData, tabId) {
             text = '(No text found in selection)';
         }
 
-        // Save result to storage
-        await chrome.storage.local.set({ lastOcrResult: text });
-        console.log('Background: Saved result to storage');
+        // Save result to storage and clear status
+        await chrome.storage.local.set({
+            lastOcrResult: text,
+            ocrStatus: 'idle'
+        });
+        console.log('Background: Saved result to storage and set status to idle');
 
         // Copy to clipboard
         await copyToClipboard(text, tabId);
@@ -66,11 +75,11 @@ async function handleScreenshotCapture(captureData, tabId) {
         showNotification('OCR Complete! ✓', text);
 
         // Notify popup (if it's still open)
-        console.log('Background: Notifying popup of completion...');
         notifyPopup({ action: 'ocrComplete', text: text });
 
     } catch (error) {
         console.error('OCR Pipeline failed:', error);
+        await chrome.storage.local.set({ ocrStatus: 'error', lastOcrError: error.message });
         showNotification('OCR Failed', 'Error: ' + error.message, true);
         notifyPopup({ action: 'ocrError', error: error.message });
     }
